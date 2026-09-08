@@ -2,10 +2,8 @@
 
 Pull new changes from the TA using.
 
-*You only need to run this once in the project lifetime*
-
-
-`git remote add upstream https://github.com/UnaryLab/EEL4768_RISC-V_Project`
+*You only need to run this once in the project lifetime*:
+- `git remote add upstream https://github.com/UnaryLab/EEL4768_RISC-V_Project`
 
 `git fetch upstream`
 
@@ -19,6 +17,10 @@ Push your own changes for teammates to view using:
 `git commit -m "<What Changes You Made>"`
 
 `git push origin main`
+
+Get changes from your teammate or the github using:
+
+`git pull`
 
 Make sure to activate the conda environment
 
