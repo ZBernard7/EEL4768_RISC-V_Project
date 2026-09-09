@@ -378,9 +378,283 @@ module alu (
     assign add_sub_result = propagate ^ carry[31:0];
 
 
-    // For now, this sends the ADD/SUB result directly to the output.
-    // Later, this will be replaced by the i_opsel result selection.
-    assign o_result = add_sub_result;
+        // SLL barrel shifter
+    wire [31:0] sll_stage1;
+    wire [31:0] sll_stage2;
+    wire [31:0] sll_stage4;
+    wire [31:0] sll_stage8;
+    wire [31:0] sll_result;
+
+    // SRL/SRA barrel shifter
+    wire [31:0] srl_stage1;
+    wire [31:0] srl_stage2;
+    wire [31:0] srl_stage4;
+    wire [31:0] srl_stage8;
+    wire [31:0] srl_result;
+
+    // Comparator
+    wire [31:0] bit_equal;
+    wire [32:0] unsigned_less;
+    wire signed_less;
+
+    // Other operation results
+    wire [31:0] slt_result;
+    wire [31:0] sltu_result;
+    wire [31:0] xor_result;
+    wire [31:0] or_result;
+    wire [31:0] and_result;
+
+        // ------------------------------------------------------------
+    // SLL - Shift Left Logical, stopping at 5 bits
+    // ------------------------------------------------------------
+
+    assign sll_stage1 =
+        i_op2[0] ? {i_op1[30:0], 1'b0} : i_op1;
+
+    assign sll_stage2 =
+        i_op2[1] ? {sll_stage1[29:0], 2'b00} : sll_stage1;
+
+    assign sll_stage4 =
+        i_op2[2] ? {sll_stage2[27:0], 4'b0000} : sll_stage2;
+
+    assign sll_stage8 =
+        i_op2[3] ? {sll_stage4[23:0], 8'b00000000} : sll_stage4;
+
+    assign sll_result =
+        i_op2[4] ? {sll_stage8[15:0], 16'b0000000000000000} : sll_stage8;
+
+            // ------------------------------------------------------------
+    // Comparator
+    // ------------------------------------------------------------
+
+    assign bit_equal[31] = ~(i_op1[31] ^ i_op2[31]);
+    assign bit_equal[30] = ~(i_op1[30] ^ i_op2[30]);
+    assign bit_equal[29] = ~(i_op1[29] ^ i_op2[29]);
+    assign bit_equal[28] = ~(i_op1[28] ^ i_op2[28]);
+    assign bit_equal[27] = ~(i_op1[27] ^ i_op2[27]);
+    assign bit_equal[26] = ~(i_op1[26] ^ i_op2[26]);
+    assign bit_equal[25] = ~(i_op1[25] ^ i_op2[25]);
+    assign bit_equal[24] = ~(i_op1[24] ^ i_op2[24]);
+    assign bit_equal[23] = ~(i_op1[23] ^ i_op2[23]);
+    assign bit_equal[22] = ~(i_op1[22] ^ i_op2[22]);
+    assign bit_equal[21] = ~(i_op1[21] ^ i_op2[21]);
+    assign bit_equal[20] = ~(i_op1[20] ^ i_op2[20]);
+    assign bit_equal[19] = ~(i_op1[19] ^ i_op2[19]);
+    assign bit_equal[18] = ~(i_op1[18] ^ i_op2[18]);
+    assign bit_equal[17] = ~(i_op1[17] ^ i_op2[17]);
+    assign bit_equal[16] = ~(i_op1[16] ^ i_op2[16]);
+    assign bit_equal[15] = ~(i_op1[15] ^ i_op2[15]);
+    assign bit_equal[14] = ~(i_op1[14] ^ i_op2[14]);
+    assign bit_equal[13] = ~(i_op1[13] ^ i_op2[13]);
+    assign bit_equal[12] = ~(i_op1[12] ^ i_op2[12]);
+    assign bit_equal[11] = ~(i_op1[11] ^ i_op2[11]);
+    assign bit_equal[10] = ~(i_op1[10] ^ i_op2[10]);
+    assign bit_equal[9]  = ~(i_op1[9]  ^ i_op2[9]);
+    assign bit_equal[8]  = ~(i_op1[8]  ^ i_op2[8]);
+    assign bit_equal[7]  = ~(i_op1[7]  ^ i_op2[7]);
+    assign bit_equal[6]  = ~(i_op1[6]  ^ i_op2[6]);
+    assign bit_equal[5]  = ~(i_op1[5]  ^ i_op2[5]);
+    assign bit_equal[4]  = ~(i_op1[4]  ^ i_op2[4]);
+    assign bit_equal[3]  = ~(i_op1[3]  ^ i_op2[3]);
+    assign bit_equal[2]  = ~(i_op1[2]  ^ i_op2[2]);
+    assign bit_equal[1]  = ~(i_op1[1]  ^ i_op2[1]);
+    assign bit_equal[0]  = ~(i_op1[0]  ^ i_op2[0]);
+
+        assign unsigned_less[32] = 1'b0;
+
+    assign unsigned_less[31] =
+        (~i_op1[31] & i_op2[31]);
+
+    assign unsigned_less[30] =
+        (~i_op1[30] & i_op2[30]) |
+        (bit_equal[31] & unsigned_less[31]);
+
+    assign unsigned_less[29] =
+        (~i_op1[29] & i_op2[29]) |
+        (bit_equal[30] & unsigned_less[30]);
+
+    assign unsigned_less[28] =
+        (~i_op1[28] & i_op2[28]) |
+        (bit_equal[29] & unsigned_less[29]);
+
+    assign unsigned_less[27] =
+        (~i_op1[27] & i_op2[27]) |
+        (bit_equal[28] & unsigned_less[28]);
+
+    assign unsigned_less[26] =
+        (~i_op1[26] & i_op2[26]) |
+        (bit_equal[27] & unsigned_less[27]);
+
+    assign unsigned_less[25] =
+        (~i_op1[25] & i_op2[25]) |
+        (bit_equal[26] & unsigned_less[26]);
+
+    assign unsigned_less[24] =
+        (~i_op1[24] & i_op2[24]) |
+        (bit_equal[25] & unsigned_less[25]);
+
+    assign unsigned_less[23] =
+        (~i_op1[23] & i_op2[23]) |
+        (bit_equal[24] & unsigned_less[24]);
+
+    assign unsigned_less[22] =
+        (~i_op1[22] & i_op2[22]) |
+        (bit_equal[23] & unsigned_less[23]);
+
+    assign unsigned_less[21] =
+        (~i_op1[21] & i_op2[21]) |
+        (bit_equal[22] & unsigned_less[22]);
+
+    assign unsigned_less[20] =
+        (~i_op1[20] & i_op2[20]) |
+        (bit_equal[21] & unsigned_less[21]);
+
+    assign unsigned_less[19] =
+        (~i_op1[19] & i_op2[19]) |
+        (bit_equal[20] & unsigned_less[20]);
+
+    assign unsigned_less[18] =
+        (~i_op1[18] & i_op2[18]) |
+        (bit_equal[19] & unsigned_less[19]);
+
+    assign unsigned_less[17] =
+        (~i_op1[17] & i_op2[17]) |
+        (bit_equal[18] & unsigned_less[18]);
+
+    assign unsigned_less[16] =
+        (~i_op1[16] & i_op2[16]) |
+        (bit_equal[17] & unsigned_less[17]);
+
+    assign unsigned_less[15] =
+        (~i_op1[15] & i_op2[15]) |
+        (bit_equal[16] & unsigned_less[16]);
+
+    assign unsigned_less[14] =
+        (~i_op1[14] & i_op2[14]) |
+        (bit_equal[15] & unsigned_less[15]);
+
+    assign unsigned_less[13] =
+        (~i_op1[13] & i_op2[13]) |
+        (bit_equal[14] & unsigned_less[14]);
+
+    assign unsigned_less[12] =
+        (~i_op1[12] & i_op2[12]) |
+        (bit_equal[13] & unsigned_less[13]);
+
+    assign unsigned_less[11] =
+        (~i_op1[11] & i_op2[11]) |
+        (bit_equal[12] & unsigned_less[12]);
+
+    assign unsigned_less[10] =
+        (~i_op1[10] & i_op2[10]) |
+        (bit_equal[11] & unsigned_less[11]);
+
+    assign unsigned_less[9] =
+        (~i_op1[9] & i_op2[9]) |
+        (bit_equal[10] & unsigned_less[10]);
+
+    assign unsigned_less[8] =
+        (~i_op1[8] & i_op2[8]) |
+        (bit_equal[9] & unsigned_less[9]);
+
+    assign unsigned_less[7] =
+        (~i_op1[7] & i_op2[7]) |
+        (bit_equal[8] & unsigned_less[8]);
+
+    assign unsigned_less[6] =
+        (~i_op1[6] & i_op2[6]) |
+        (bit_equal[7] & unsigned_less[7]);
+
+    assign unsigned_less[5] =
+        (~i_op1[5] & i_op2[5]) |
+        (bit_equal[6] & unsigned_less[6]);
+
+    assign unsigned_less[4] =
+        (~i_op1[4] & i_op2[4]) |
+        (bit_equal[5] & unsigned_less[5]);
+
+    assign unsigned_less[3] =
+        (~i_op1[3] & i_op2[3]) |
+        (bit_equal[4] & unsigned_less[4]);
+
+    assign unsigned_less[2] =
+        (~i_op1[2] & i_op2[2]) |
+        (bit_equal[3] & unsigned_less[3]);
+
+    assign unsigned_less[1] =
+        (~i_op1[1] & i_op2[1]) |
+        (bit_equal[2] & unsigned_less[2]);
+
+    assign unsigned_less[0] =
+        (~i_op1[0] & i_op2[0]) |
+        (bit_equal[1] & unsigned_less[1]);
+
+    assign sltu_result = {31'b0, unsigned_less[0]};
+        assign signed_less =
+        (i_op1[31] & ~i_op2[31]) |
+        ((~(i_op1[31] ^ i_op2[31])) & unsigned_less[0]);
+
+    assign slt_result = {31'b0, signed_less};
+
+        // ------------------------------------------------------------
+    // Logic operations: XOR, OR, AND
+    // ------------------------------------------------------------
+
+    assign xor_result = i_op1 ^ i_op2;
+
+    assign or_result  = i_op1 | i_op2;
+
+    assign and_result = i_op1 & i_op2;
+
+        // ------------------------------------------------------------
+    // SRL / SRA
+    // ------------------------------------------------------------
+
+    assign srl_stage1 =
+        i_op2[0]
+        ? {{1{i_arith ? i_op1[31] : 1'b0}}, i_op1[31:1]}
+        : i_op1;
+
+    assign srl_stage2 =
+        i_op2[1]
+        ? {{2{i_arith ? i_op1[31] : 1'b0}}, srl_stage1[31:2]}
+        : srl_stage1;
+
+    assign srl_stage4 =
+        i_op2[2]
+        ? {{4{i_arith ? i_op1[31] : 1'b0}}, srl_stage2[31:4]}
+        : srl_stage2;
+
+    assign srl_stage8 =
+        i_op2[3]
+        ? {{8{i_arith ? i_op1[31] : 1'b0}}, srl_stage4[31:8]}
+        : srl_stage4;
+
+    assign srl_result =
+        i_op2[4]
+        ? {{16{i_arith ? i_op1[31] : 1'b0}}, srl_stage8[31:16]}
+        : srl_stage8;
+
+        // ------------------------------------------------------------
+    // ALU result selection
+    // ------------------------------------------------------------
+
+    assign o_result =
+        (i_opsel == 3'b000) ? add_sub_result :
+        (i_opsel == 3'b001) ? sll_result :
+        (i_opsel == 3'b010) ? slt_result :
+        (i_opsel == 3'b011) ? sltu_result :
+        (i_opsel == 3'b100) ? xor_result :
+        (i_opsel == 3'b101) ? srl_result :
+        (i_opsel == 3'b110) ? or_result :
+                               and_result;
+                               
+        // Equality
+    assign o_eq = (i_op1 == i_op2);
+
+    // Branch comparison
+    assign o_slt =
+        i_unsigned ? unsigned_less[0] : signed_less;
 
 endmodule
 
