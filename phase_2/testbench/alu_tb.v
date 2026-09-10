@@ -439,22 +439,22 @@ initial begin
     // 8 operations x 5000 = 40,000 random tests.
     // --------------------------------------------------------
 
-    // for (i = 0; i < 8; i = i + 1) begin
+    for (i = 0; i < 8; i = i + 1) begin
 
-    //     for (j = 0; j < 5000; j = j + 1) begin
+        for (j = 0; j < 5000; j = j + 1) begin
 
-    //         i_opsel    = i[2:0];
-    //         i_sub      = $random;
-    //         i_unsigned = $random;
-    //         i_arith    = $random;
-    //         i_op1      = $random;
-    //         i_op2      = $random;
+            i_opsel    = i[2:0];
+            i_sub      = $random;
+            i_unsigned = $random;
+            i_arith    = $random;
+            i_op1      = $random;
+            i_op2      = $random;
 
-    //         check_result;
+            check_result;
 
-    //     end
+        end
 
-    // end
+    end
 
     // ========================================================
     // ADDITION/SUBTRACTION DIRECTED RANDOM TESTS
