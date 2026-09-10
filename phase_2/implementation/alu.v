@@ -1,4 +1,7 @@
 `default_nettype none
+// AI USE DISCLOSURE:
+// Claude was used to help type redunant parts of the code.
+// Accessed September 2026.
 
 // The arithmetic logic unit (ALU) is responsible for performing the core
 // calculations of the processor. It takes two 32-bit operands and outputs
