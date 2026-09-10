@@ -86,6 +86,224 @@ module decoder (
 );
     // Your implementation goes under here
     // ------------------------------------
+    wire [6:0] opcode;
+    wire [2:0] funct3;
+    wire [6:0] funct7;
+    wire [4:0] rs1;
+    wire [4:0] rs2;
+    wire [4:0] rd;
+
+    assign opcode = i_inst[6:0];
+    assign rd     = i_inst[11:7];
+    assign funct3 = i_inst[14:12];
+    assign rs1    = i_inst[19:15];
+    assign rs2    = i_inst[24:20];
+    assign funct7 = i_inst[31:25];
+
+    wire [5:0] format;
+
+    imm immediate_generator (
+        .i_inst(i_inst),
+        .i_format(format),
+        .o_immediate(o_immediate)
+    );
+
+wire is_lui;
+wire is_auipc;
+wire is_jal;
+wire is_jalr;
+wire is_branch;
+wire is_load;
+wire is_store;
+wire is_op_imm;
+wire is_op;
+wire is_system;
+assign is_lui    = (opcode == 7'b0110111);
+assign is_auipc  = (opcode == 7'b0010111);
+assign is_jal    = (opcode == 7'b1101111);
+assign is_jalr   = (opcode == 7'b1100111);
+assign is_branch = (opcode == 7'b1100011);
+assign is_load   = (opcode == 7'b0000011);
+assign is_store  = (opcode == 7'b0100011);
+assign is_op_imm = (opcode == 7'b0010011);
+assign is_op     = (opcode == 7'b0110011);
+assign is_system = (opcode == 7'b1110011);
+
+assign format =
+    (is_op)                         ? 6'b000001 :
+    (is_op_imm || is_load || is_jalr) ? 6'b000010 :
+    (is_store)                      ? 6'b000100 :
+    (is_branch)                     ? 6'b001000 :
+    (is_lui || is_auipc)            ? 6'b010000 :
+    (is_jal)                        ? 6'b100000 :
+                                      6'b000000;
+
+assign o_rs1 = rs1;
+assign o_rs2 = rs2;
+
+assign o_op1_sel = is_auipc;
+assign o_op2_sel =
+    is_op_imm || is_load || is_store ||
+    is_auipc || is_jalr;
+
+assign o_alu_opsel =
+    (is_op || is_op_imm) ? funct3 :
+                           3'b000;
+
+assign o_alu_sub =
+    is_op && (funct3 == 3'b000) && (funct7 == 7'b0100000);
+
+assign o_alu_arith =
+    (funct3 == 3'b101) &&
+    (funct7 == 7'b0100000) &&
+    (is_op || is_op_imm);
+
+assign o_alu_unsigned =
+    ((is_op || is_op_imm) && (funct3 == 3'b011)) ||
+    (is_branch && funct3[1]);
+
+assign o_branch = is_branch;
+assign o_jump   = is_jal || is_jalr;
+assign o_pc_sel = is_jalr;
+
+assign o_branch_equal =
+    is_branch && (funct3[2:1] == 2'b00);
+
+assign o_branch_unsigned =
+    is_branch && (funct3[2:1] == 2'b11);
+
+assign o_branch_invert =
+    is_branch && funct3[0];
+
+assign o_dmem_ren = is_load;
+assign o_dmem_wen = is_store;
+
+assign o_dmem_memb =
+    (is_load || is_store) && (funct3[1:0] == 2'b00);
+
+assign o_dmem_memh =
+    (is_load || is_store) && (funct3[1:0] == 2'b01);
+
+assign o_dmem_memw =
+    (is_load || is_store) && (funct3[1:0] == 2'b10);
+
+assign o_dmem_memu =
+    is_load && funct3[2];
+
+assign o_dmem_align =
+    o_dmem_memw ? 2'b11 :
+    o_dmem_memh ? 2'b01 :
+                  2'b00;
+
+assign o_rd_sel =
+    is_lui                 ? 4'b0010 :
+    (is_jal || is_jalr)    ? 4'b0100 :
+    is_load                ? 4'b1000 :
+                             4'b0001;
+
+assign o_halt = (i_inst == 32'h00100073);
+
+wire legal_branch;
+wire legal_load;
+wire legal_store;
+wire legal_jalr;
+wire legal_op_imm;
+wire legal_op;
+
+assign o_rd =
+    (is_lui ||
+     is_auipc ||
+     is_jal ||
+     legal_jalr ||
+     legal_load ||
+     legal_op_imm ||
+     legal_op)
+        ? rd
+        : 5'b00000;
+
+assign legal_branch =
+    is_branch &&
+    ((funct3 == 3'b000) ||   // BEQ
+     (funct3 == 3'b001) ||   // BNE
+     (funct3 == 3'b100) ||   // BLT
+     (funct3 == 3'b101) ||   // BGE
+     (funct3 == 3'b110) ||   // BLTU
+     (funct3 == 3'b111));    // BGEU
+
+assign legal_load =
+    is_load &&
+    ((funct3 == 3'b000) ||   // LB
+     (funct3 == 3'b001) ||   // LH
+     (funct3 == 3'b010) ||   // LW
+     (funct3 == 3'b100) ||   // LBU
+     (funct3 == 3'b101));    // LHU
+
+assign legal_store =
+    is_store &&
+    ((funct3 == 3'b000) ||   // SB
+     (funct3 == 3'b001) ||   // SH
+     (funct3 == 3'b010));    // SW
+
+assign legal_jalr =
+    is_jalr && (funct3 == 3'b000);
+
+assign legal_op =
+    is_op &&
+    (
+        // ADD, SLL, SLT, SLTU, XOR, SRL, OR, AND
+        ((funct7 == 7'b0000000) &&
+         ((funct3 == 3'b000) ||
+          (funct3 == 3'b001) ||
+          (funct3 == 3'b010) ||
+          (funct3 == 3'b011) ||
+          (funct3 == 3'b100) ||
+          (funct3 == 3'b101) ||
+          (funct3 == 3'b110) ||
+          (funct3 == 3'b111)))
+        ||
+        // SUB and SRA
+        ((funct7 == 7'b0100000) &&
+         ((funct3 == 3'b000) ||
+          (funct3 == 3'b101)))
+    );
+
+assign legal_op_imm =
+    is_op_imm &&
+    (
+        // ADDI, SLTI, SLTIU, XORI, ORI, ANDI
+        (funct3 == 3'b000) ||
+        (funct3 == 3'b010) ||
+        (funct3 == 3'b011) ||
+        (funct3 == 3'b100) ||
+        (funct3 == 3'b110) ||
+        (funct3 == 3'b111) ||
+
+        // SLLI
+        ((funct3 == 3'b001) &&
+         (funct7 == 7'b0000000)) ||
+
+        // SRLI
+        ((funct3 == 3'b101) &&
+         (funct7 == 7'b0000000)) ||
+
+        // SRAI
+        ((funct3 == 3'b101) &&
+         (funct7 == 7'b0100000))
+    );
+
+assign o_legal =
+    is_lui ||
+    is_auipc ||
+    is_jal ||
+    legal_jalr ||
+    legal_branch ||
+    legal_load ||
+    legal_store ||
+    legal_op_imm ||
+    legal_op ||
+    o_halt;
+
+
 
 endmodule
 

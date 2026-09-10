@@ -1,3 +1,4 @@
+// Utilized gemini accessed 9/8/26
 `default_nettype none
 
 // The register file is effectively a single cycle memory with 32-bit words
@@ -50,6 +51,51 @@ module rf #(
 );
     // Your implementation goes under here
     // ------------------------------------
+
+    // 1. Array storage holding 32 registers (32-bit each)
+    reg [31:0] registers [31:0];
+    integer i;
+
+    // Initialize array at time 0 to prevent 'x' values before any reset pulse
+    initial begin
+        for (i = 0; i < 32; i = i + 1) begin
+            registers[i] = 32'b0;
+        end
+    end
+
+    // 2. Synchronous Register Write & Reset
+    always @(posedge i_clk) begin
+        if (i_rst) begin
+            // Active-high synchronous reset: clear all 32 registers to 0
+            for (i = 0; i < 32; i = i + 1) begin
+                registers[i] <= 32'b0;
+            end
+        end else if (i_rd_wen && (i_rd_waddr != 5'b00000)) begin
+            // Write to register if write enable is active and target is not x0
+            registers[i_rd_waddr] <= i_rd_wdata;
+        end
+    end
+
+    // 3. Combinational Read Ports with Generate-based Bypass Logic
+    generate
+        if (BYPASS_EN != 0) begin : gen_bypass_enabled
+            // Read Port 1 (with forwarding)
+            assign o_rs1_rdata = (i_rs1_raddr == 5'b00000) ? 32'b0 :
+                                 (i_rd_wen && (i_rd_waddr == i_rs1_raddr)) ? i_rd_wdata :
+                                 registers[i_rs1_raddr];
+
+            // Read Port 2 (with forwarding)
+            assign o_rs2_rdata = (i_rs2_raddr == 5'b00000) ? 32'b0 :
+                                 (i_rd_wen && (i_rd_waddr == i_rs2_raddr)) ? i_rd_wdata :
+                                 registers[i_rs2_raddr];
+        end else begin : gen_bypass_disabled
+            // Read Port 1 (standard read)
+            assign o_rs1_rdata = (i_rs1_raddr == 5'b00000) ? 32'b0 : registers[i_rs1_raddr];
+
+            // Read Port 2 (standard read)
+            assign o_rs2_rdata = (i_rs2_raddr == 5'b00000) ? 32'b0 : registers[i_rs2_raddr];
+        end
+    endgenerate
 
 endmodule
 
