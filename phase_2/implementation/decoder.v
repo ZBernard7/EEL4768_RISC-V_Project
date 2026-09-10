@@ -1,3 +1,7 @@
+// AI USE DISCLOSURE:
+// OpenAI ChatGPT was used as an aid in the development of this file.
+// Accessed September 2026.
+
 `default_nettype none
 
 // Remember to instantiate the imm in this module
@@ -302,8 +306,6 @@ assign o_legal =
     legal_op_imm ||
     legal_op ||
     o_halt;
-
-
 
 endmodule
 
