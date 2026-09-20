@@ -65,8 +65,9 @@ module rf_tb;
         end
     endtask
 
+    // Main Simulation Execution
     initial begin
-        // Initialize Signals
+        // Initialize signals
         i_clk       = 0;
         i_rst       = 0;
         i_rs1_raddr = 0;
@@ -75,7 +76,13 @@ module rf_tb;
         i_rd_waddr  = 0;
         i_rd_wdata  = 0;
 
-        $display("========== Starting Full Section 6.1 Register File Tests ==========");
+        $display("========== Starting Register File Trace Vector Verification ==========");
+        
+        // Execute official trace files
+        run_trace_file("traces/rf_no_bypass.trace", 0);
+        run_trace_file("traces/rf_bypass.trace", 1);
+
+        $display("\n========== Starting Full Section 6.1 Register File Specification Tests ==========");
 
         // -------------------------------------------------------------
         // Step 0: Global Synchronous Reset
@@ -202,12 +209,86 @@ module rf_tb;
         check_val("Bypass x0 Exception: Port 1 stays 0 during x0 write", o_rs1_rdata_bypass, 32'h0);
         check_val("Bypass x0 Exception: Port 2 stays 0 during x0 write", o_rs2_rdata_bypass, 32'h0);
 
-        $display("==================================================");
+        $display("\n==================================================");
         $display("SUMMARY: %0d Passed, %0d Failed", pass_count, fail_count);
         $display("==================================================");
 
         $finish;
     end
+
+    // Task to load and execute trace files
+    task run_trace_file(input [1024:0] trace_filename, input is_bypass);
+        integer file, status;
+        integer line_num;
+        
+        reg        tr_rst;
+        reg [4:0]  tr_rs1_raddr;
+        reg [4:0]  tr_rs2_raddr;
+        reg        tr_rd_wen;
+        reg [4:0]  tr_rd_waddr;
+        reg [31:0] tr_rd_wdata;
+        
+        reg [31:0] exp_rs1_rdata;
+        reg [31:0] exp_rs2_rdata;
+        
+        begin
+            file = $fopen(trace_filename, "r");
+            if (file == 0) begin
+                $display("[ERROR] Could not open trace file: %s", trace_filename);
+                $finish;
+            end
+            
+            $display("--- Running Trace: %s ---", trace_filename);
+            line_num = 0;
+            
+            // Loop using fscanf status directly to avoid $feof hanging on trailing newlines
+            while ($fscanf(file, "%h %h %h %h %h %h %h %h", 
+                           tr_rst, tr_rs1_raddr, tr_rs2_raddr, 
+                           tr_rd_wen, tr_rd_waddr, tr_rd_wdata, 
+                           exp_rs1_rdata, exp_rs2_rdata) == 8) begin
+                           
+                line_num = line_num + 1;
+                
+                @(negedge i_clk);
+                i_rst       = tr_rst;
+                i_rs1_raddr = tr_rs1_raddr;
+                i_rs2_raddr = tr_rs2_raddr;
+                i_rd_wen    = tr_rd_wen;
+                i_rd_waddr  = tr_rd_waddr;
+                i_rd_wdata  = tr_rd_wdata;
+                
+                #1;
+                if (is_bypass) begin
+                    if (o_rs1_rdata_bypass !== exp_rs1_rdata) begin
+                        $display("[TRACE FAIL Line %0d] Bypass rs1 mismatch! Exp: 0x%h, Got: 0x%h", 
+                                 line_num, exp_rs1_rdata, o_rs1_rdata_bypass);
+                        fail_count = fail_count + 1;
+                    end else pass_count = pass_count + 1;
+
+                    if (o_rs2_rdata_bypass !== exp_rs2_rdata) begin
+                        $display("[TRACE FAIL Line %0d] Bypass rs2 mismatch! Exp: 0x%h, Got: 0x%h", 
+                                 line_num, exp_rs2_rdata, o_rs2_rdata_bypass);
+                        fail_count = fail_count + 1;
+                    end else pass_count = pass_count + 1;
+                end else begin
+                    if (o_rs1_rdata_nobypass !== exp_rs1_rdata) begin
+                        $display("[TRACE FAIL Line %0d] NoBypass rs1 mismatch! Exp: 0x%h, Got: 0x%h", 
+                                 line_num, exp_rs1_rdata, o_rs1_rdata_nobypass);
+                        fail_count = fail_count + 1;
+                    end else pass_count = pass_count + 1;
+
+                    if (o_rs2_rdata_nobypass !== exp_rs2_rdata) begin
+                        $display("[TRACE FAIL Line %0d] NoBypass rs2 mismatch! Exp: 0x%h, Got: 0x%h", 
+                                 line_num, exp_rs2_rdata, o_rs2_rdata_nobypass);
+                        fail_count = fail_count + 1;
+                    end else pass_count = pass_count + 1;
+                end
+            end
+            
+            $fclose(file);
+            $display("--- Finished Trace: %s ---", trace_filename);
+        end
+    endtask
 
 endmodule
 `default_nettype wire

@@ -6,7 +6,7 @@
 // write port, allowing a register to be written to on the next clock edge.
 //
 // The register `x0` is hardwired to zero.
-// NOTE: This can be implemented either by silently discarding writesto
+// NOTE: This can be implemented either by silently discarding writes to
 // address 5'd0, or by muxing the output to zero when reading from that
 // address.
 module rf #(
@@ -40,16 +40,57 @@ module rf #(
     output wire [31:0] o_rs2_rdata,
     // The register write port is synchronous. When write is enabled, the
     // data at the write port will be written to the specified register
-    // at the next clock edge. When the writen enable is low, the register
+    // at the next clock edge. When the write enable is low, the register
     // file should remain unchanged at the clock edge.
     //
     // Write register enable, address [0, 31] and input data.
-    // input  wire        i_rd_wen, remve this signal
     input  wire [ 4:0] i_rd_waddr,
     input  wire [31:0] i_rd_wdata
 );
-    // Your implementation goes under here
+
     // ------------------------------------
+
+    // 32 registers of 32-bit width
+    reg [31:0] registers [31:0];
+    integer i;
+
+    // Zero-initialize register array for simulation
+    initial begin
+        for (i = 0; i < 32; i = i + 1) begin
+            registers[i] = 32'd0;
+        end
+    end
+
+    // Synchronous write and reset logic
+    // Gated solely by checking if destination is not x0 (no i_rd_wen)
+    always @(posedge i_clk) begin
+        if (i_rst) begin
+            for (i = 0; i < 32; i = i + 1) begin
+                registers[i] <= 32'd0;
+            end
+        end else if (i_rd_waddr != 5'd0) begin
+            registers[i_rd_waddr] <= i_rd_wdata;
+        end
+    end
+
+    // Asynchronous read logic with parameter-controlled bypass
+    generate
+        if (BYPASS_EN != 0) begin : gen_bypass_enabled
+            // Read port 1: check x0, check bypass forwarding, else read array
+            assign o_rs1_rdata = (i_rs1_raddr == 5'd0)     ? 32'd0 :
+                                 (i_rd_waddr == i_rs1_raddr) ? i_rd_wdata :
+                                 registers[i_rs1_raddr];
+
+            // Read port 2: check x0, check bypass forwarding, else read array
+            assign o_rs2_rdata = (i_rs2_raddr == 5'd0)     ? 32'd0 :
+                                 (i_rd_waddr == i_rs2_raddr) ? i_rd_wdata :
+                                 registers[i_rs2_raddr];
+        end else begin : gen_bypass_disabled
+            // Standard asynchronous reads
+            assign o_rs1_rdata = (i_rs1_raddr == 5'd0) ? 32'd0 : registers[i_rs1_raddr];
+            assign o_rs2_rdata = (i_rs2_raddr == 5'd0) ? 32'd0 : registers[i_rs2_raddr];
+        end
+    endgenerate
 
 endmodule
 
