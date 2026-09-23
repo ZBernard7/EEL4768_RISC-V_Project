@@ -126,16 +126,67 @@ module hart #(
     //   Used localparam constants rather than raw literals in comparisons. This
     //   keeps the control logic clean, self-documenting, and avoids magic numbers.
     // =========================================================================
-    wire [6:0] opcode = i_imem_rdata[6:0];
-    wire [2:0] funct3 = i_imem_rdata[14:12];
+    
+    //Zahra's Notes
+    //Everything about "what kind of instruction is this" now comes out of
+    // the decoder instead of being re-derived here. Basically our
+    // immeidate is already the right one for whatever instruction so theres
+    // no need to compute imm_b/imm_j/imm_i 
+    // and no second imm.v instance (decoder already has one inside it).
+    // wire [6:0] opcode = i_imem_rdata[6:0];
+    // wire [2:0] funct3 = i_imem_rdata[14:12];
 
-    localparam OPCODE_BRANCH = 7'b1100011; // B-type conditional branches
-    localparam OPCODE_JAL    = 7'b1101111; // J-type unconditional jump
-    localparam OPCODE_JALR   = 7'b1100111; // I-type register-indirect jump
+    // localparam OPCODE_BRANCH = 7'b1100011; // B-type conditional branches
+    // localparam OPCODE_JAL    = 7'b1101111; // J-type unconditional jump
+    // localparam OPCODE_JALR   = 7'b1100111; // I-type register-indirect jump
 
-    wire is_branch = (opcode == OPCODE_BRANCH);
-    wire is_jal    = (opcode == OPCODE_JAL);
-    wire is_jalr   = (opcode == OPCODE_JALR);
+    // wire is_branch = (opcode == OPCODE_BRANCH);
+    // wire is_jal    = (opcode == OPCODE_JAL);
+    // wire is_jalr   = (opcode == OPCODE_JALR);
+
+    wire        dec_legal, dec_halt;
+    wire [ 4:0] dec_rs1, dec_rs2, dec_rd;
+    wire [31:0] dec_imm;
+    wire        dec_op1_sel, dec_op2_sel;
+    wire [ 2:0] dec_alu_opsel;
+    wire        dec_alu_sub, dec_alu_unsigned, dec_alu_arith;
+    wire        dec_branch, dec_jump;
+    wire        dec_branch_equal, dec_branch_unsigned, dec_branch_invert;
+    wire        dec_dmem_ren, dec_dmem_wen;
+    wire [ 1:0] dec_dmem_align;
+    wire        dec_dmem_memb, dec_dmem_memh, dec_dmem_memw, dec_dmem_memu;
+    wire [ 3:0] dec_rd_sel;
+    wire        dec_pc_sel;
+
+    decoder u_decoder (
+        .i_inst            (i_imem_rdata),
+        .o_legal           (dec_legal),
+        .o_halt            (dec_halt),
+        .o_rs1             (dec_rs1),
+        .o_rs2             (dec_rs2),
+        .o_rd              (dec_rd),
+        .o_immediate       (dec_imm),
+        .o_op1_sel         (dec_op1_sel),
+        .o_op2_sel         (dec_op2_sel),
+        .o_alu_opsel       (dec_alu_opsel),
+        .o_alu_sub         (dec_alu_sub),
+        .o_alu_unsigned    (dec_alu_unsigned),
+        .o_alu_arith       (dec_alu_arith),
+        .o_branch          (dec_branch),
+        .o_jump            (dec_jump),
+        .o_branch_equal    (dec_branch_equal),
+        .o_branch_unsigned (dec_branch_unsigned),
+        .o_branch_invert   (dec_branch_invert),
+        .o_dmem_ren        (dec_dmem_ren),
+        .o_dmem_wen        (dec_dmem_wen),
+        .o_dmem_align      (dec_dmem_align),
+        .o_dmem_memb       (dec_dmem_memb),
+        .o_dmem_memh       (dec_dmem_memh),
+        .o_dmem_memw       (dec_dmem_memw),
+        .o_dmem_memu       (dec_dmem_memu),
+        .o_rd_sel          (dec_rd_sel),
+        .o_pc_sel          (dec_pc_sel)
+    );
 
 
     // =========================================================================
@@ -152,21 +203,39 @@ module hart #(
     //   the need for an extra shift-left hardware unit.
     // =========================================================================
 
-    wire [31:0] imm_b = {{20{i_imem_rdata[31]}},
-                          i_imem_rdata[7],
-                          i_imem_rdata[30:25],
-                          i_imem_rdata[11:8],
-                          1'b0};
 
-    wire [31:0] imm_j = {{12{i_imem_rdata[31]}},
-                          i_imem_rdata[19:12],
-                          i_imem_rdata[20],
-                          i_imem_rdata[30:21],
-                          1'b0};
+//Zahra's Notes:
+//same rf thing as before its just that now rs1 and 2 addresses
+//are being read from the decoder
+    // wire [31:0] imm_b = {{20{i_imem_rdata[31]}},
+    //                       i_imem_rdata[7],
+    //                       i_imem_rdata[30:25],
+    //                       i_imem_rdata[11:8],
+    //                       1'b0};
 
-    wire [31:0] imm_i = {{20{i_imem_rdata[31]}},
-                          i_imem_rdata[31:20]};
+    // wire [31:0] imm_j = {{12{i_imem_rdata[31]}},
+    //                       i_imem_rdata[19:12],
+    //                       i_imem_rdata[20],
+    //                       i_imem_rdata[30:21],
+    //                       1'b0};
 
+    // wire [31:0] imm_i = {{20{i_imem_rdata[31]}},
+    //                       i_imem_rdata[31:20]};
+
+    wire [31:0] rs1_rdata, rs2_rdata;
+    wire [ 4:0] rf_waddr;
+    wire [31:0] rf_wdata;
+
+    rf #(.BYPASS_EN(0)) u_rf (
+        .i_clk      (i_clk),
+        .i_rst      (i_rst),
+        .i_rs1_raddr(dec_rs1),
+        .o_rs1_rdata(rs1_rdata),
+        .i_rs2_raddr(dec_rs2),
+        .o_rs2_rdata(rs2_rdata),
+        .i_rd_waddr (rf_waddr),
+        .i_rd_wdata (rf_wdata)
+    );
 
     // =========================================================================
     // SECTION 3: Register File Instantiation & Datapath Interface
@@ -183,38 +252,60 @@ module hart #(
     //      or unknown ('x') propagation during isolated unit testing.
     // =========================================================================
 
-    wire [4:0] rs1_addr = i_imem_rdata[19:15];
-    wire [4:0] rs2_addr = i_imem_rdata[24:20];
+// the alu wasnt instantiated yet and uses 2 operands fr the decoders op1_sel & op2_se4l
+//no comparator module bc alu is doing branch compare and arthimetc
 
-    wire [31:0] rs1_rdata; // Directly feeds JALR target calculation below
-    wire [31:0] rs2_rdata;
+    // wire [4:0] rs1_addr = i_imem_rdata[19:15];
+    // wire [4:0] rs2_addr = i_imem_rdata[24:20];
 
-    // TODO (Teammate - Writeback): Replace these placeholder stubs with the
-    // destination register rd address (or 5'd0 if no write) and the writeback mux output.
-    wire [4:0]  rf_waddr = 5'd0;
-    wire [31:0] rf_wdata = 32'd0;
+    // wire [31:0] rs1_rdata; // Directly feeds JALR target calculation below
+    // wire [31:0] rs2_rdata;
 
-    rf #(.BYPASS_EN(0)) u_rf (
-        .i_clk      (i_clk),
-        .i_rst      (i_rst),
-        .i_rs1_raddr(rs1_addr),
-        .o_rs1_rdata(rs1_rdata),
-        .i_rs2_raddr(rs2_addr),
-        .o_rs2_rdata(rs2_rdata),
-        .i_rd_waddr (rf_waddr),
-        .i_rd_wdata (rf_wdata)
+    // // TODO (Teammate - Writeback): Replace these placeholder stubs with the
+    // // destination register rd address (or 5'd0 if no write) and the writeback mux output.
+    // wire [4:0]  rf_waddr = 5'd0;
+    // wire [31:0] rf_wdata = 32'd0;
+
+    // rf #(.BYPASS_EN(0)) u_rf (
+    //     .i_clk      (i_clk),
+    //     .i_rst      (i_rst),
+    //     .i_rs1_raddr(rs1_addr),
+    //     .o_rs1_rdata(rs1_rdata),
+    //     .i_rs2_raddr(rs2_addr),
+    //     .o_rs2_rdata(rs2_rdata),
+    //     .i_rd_waddr (rf_waddr),
+    //     .i_rd_wdata (rf_wdata)
+    // );
+
+    // // TODO (Teammate - ALU): Connect these wires to the comparison outputs of alu.v
+    // // (e.g., .o_eq(alu_eq), .o_slt(alu_slt), .o_sltu(alu_sltu)).
+    // wire alu_eq   = 1'b0;
+    // wire alu_slt  = 1'b0;
+    // wire alu_sltu = 1'b0;
+
+    // // TODO (Teammate - Trap Logic): Replace this tie-off with the actual trap detection signal.
+    // // When 1'b1, next_pc must stay pc_plus_4 and memory writes/register writes must be suppressed.
+    // assign o_retire_trap = 1'b0;
+
+
+    wire [31:0] alu_op1 = dec_op1_sel ? pc : rs1_rdata;
+    wire [31:0] alu_op2 = dec_op2_sel ? dec_imm : rs2_rdata;
+
+    wire [31:0] alu_result;
+    wire        alu_eq, alu_slt, alu_sltu;
+
+    alu u_alu (
+        .i_opsel   (dec_alu_opsel),
+        .i_sub     (dec_alu_sub),
+        .i_unsigned(dec_alu_unsigned),
+        .i_arith   (dec_alu_arith),
+        .i_op1     (alu_op1),
+        .i_op2     (alu_op2),
+        .o_result  (alu_result),
+        .o_eq      (alu_eq),
+        .o_slt     (alu_slt),
+        .o_sltu    (alu_sltu)
     );
-
-    // TODO (Teammate - ALU): Connect these wires to the comparison outputs of alu.v
-    // (e.g., .o_eq(alu_eq), .o_slt(alu_slt), .o_sltu(alu_sltu)).
-    wire alu_eq   = 1'b0;
-    wire alu_slt  = 1'b0;
-    wire alu_sltu = 1'b0;
-
-    // TODO (Teammate - Trap Logic): Replace this tie-off with the actual trap detection signal.
-    // When 1'b1, next_pc must stay pc_plus_4 and memory writes/register writes must be suppressed.
-    assign o_retire_trap = 1'b0;
-
 
     // =========================================================================
     // SECTION 4: Program Counter Arithmetic & Target Calculations
@@ -233,16 +324,19 @@ module hart #(
     //   guarantee JALR never branches to an odd byte address.
     // =========================================================================
 
-    reg  [31:0] pc;
-    wire [31:0] pc_plus_4;
-    wire [31:0] branch_target;
-    wire [31:0] jalr_target;
-    wire [31:0] next_pc;
-    wire        branch_taken;
+    wire is_lui   = dec_rd_sel[1];
+    wire is_auipc = dec_op1_sel;
+    wire is_jal   = dec_jump & ~dec_pc_sel;
+    // reg  [31:0] pc;
+    // wire [31:0] pc_plus_4;
+    // wire [31:0] branch_target;
+    // wire [31:0] jalr_target;
+    // wire [31:0] next_pc;
+    // wire        branch_taken;
 
-    assign pc_plus_4     = pc + 32'd4;
-    assign branch_target = pc + (is_jal ? imm_j : imm_b);
-    assign jalr_target   = (rs1_rdata + imm_i) & ~32'd1;
+    // assign pc_plus_4     = pc + 32'd4;
+    // assign branch_target = pc + (is_jal ? imm_j : imm_b);
+    // assign jalr_target   = (rs1_rdata + imm_i) & ~32'd1;
 
 
     // =========================================================================
@@ -257,15 +351,18 @@ module hart #(
     //   opposite conditions (BNE, BGE, BGEU). This reuses comparison results
     //   without needing duplicate subtraction or comparison hardware.
     // =========================================================================
+//Zahra's Notes: we dont need to redecode here
+    // assign branch_taken = is_branch && (
+    //     (funct3 == 3'b000 &&  alu_eq)   || // BEQ  (Equal)
+    //     (funct3 == 3'b001 && !alu_eq)   || // BNE  (Not Equal)
+    //     (funct3 == 3'b100 &&  alu_slt)  || // BLT  (Signed Less Than)
+    //     (funct3 == 3'b101 && !alu_slt)  || // BGE  (Signed Greater Than or Equal)
+    //     (funct3 == 3'b110 &&  alu_sltu) || // BLTU (Unsigned Less Than)
+    //     (funct3 == 3'b111 && !alu_sltu)    // BGEU (Unsigned Greater Than or Equal)
+    // );
 
-    assign branch_taken = is_branch && (
-        (funct3 == 3'b000 &&  alu_eq)   || // BEQ  (Equal)
-        (funct3 == 3'b001 && !alu_eq)   || // BNE  (Not Equal)
-        (funct3 == 3'b100 &&  alu_slt)  || // BLT  (Signed Less Than)
-        (funct3 == 3'b101 && !alu_slt)  || // BGE  (Signed Greater Than or Equal)
-        (funct3 == 3'b110 &&  alu_sltu) || // BLTU (Unsigned Less Than)
-        (funct3 == 3'b111 && !alu_sltu)    // BGEU (Unsigned Greater Than or Equal)
-    );
+    wire branch_condition = dec_branch_equal ? alu_eq : alu_slt;
+    wire branch_taken     = dec_branch & (branch_condition ^ dec_branch_invert);
 
     // =========================================================================
     // SECTION 6: PCSrc Selection Multiplexer
@@ -281,10 +378,16 @@ module hart #(
     //     3. JAL / taken branches take the relative target.
     //     4. Default falls through sequentially to pc_plus_4.
     // =========================================================================
-    assign next_pc = o_retire_trap            ? pc_plus_4     :
-                     is_jalr                  ? jalr_target   :
-                     (is_jal || branch_taken) ? branch_target :
-                                                pc_plus_4;
+    //Zahra's notes
+    reg  [31:0] pc;
+    wire [31:0] pc_plus_4   = pc + 32'd4;
+    wire [31:0] rel_target  = pc + dec_imm;
+    wire [31:0] jalr_target = alu_result & ~32'd1;
+
+    // assign next_pc = o_retire_trap            ? pc_plus_4     :
+    //                  is_jalr                  ? jalr_target   :
+    //                  (is_jal || branch_taken) ? branch_target :
+    //                                             pc_plus_4;
 
 
     // =========================================================================
@@ -300,36 +403,105 @@ module hart #(
     //   and routes combinational `next_pc` to `o_retire_next_pc` so testbenches
     //   can evaluate next-cycle branch predictions on the current cycle.
     // =========================================================================
-    
-    always @(posedge i_clk) begin
-        if (i_rst) begin
-            pc <= RESET_ADDR;
-        end else begin
-            pc <= next_pc;
-        end
-    end
+    //ZB
+    wire [1:0] dmem_byte_off   = alu_result[1:0];
+    wire       dmem_misaligned = (dec_dmem_ren | dec_dmem_wen) &
+                                  |(dmem_byte_off & dec_dmem_align);
+    wire       trap = ~dec_legal | dmem_misaligned;
 
-    assign o_imem_raddr     = pc;
-    assign o_retire_pc      = pc;
-    assign o_retire_next_pc = next_pc;
+    // always @(posedge i_clk) begin
+    //     if (i_rst) begin
+    //         pc <= RESET_ADDR;
+    //     end else begin
+    //         pc <= next_pc;
+    //     end
+    // end
+
+    // assign o_imem_raddr     = pc;
+    // assign o_retire_pc      = pc;
+    // assign o_retire_next_pc = next_pc;
 
 
     // =========================================================================
     // SECTION 8: Teammate Deliverables (Pending Integration)
     // =========================================================================
 
-    // TODO (Teammate): Instantiate decoder.v
-    // Connect i_imem_rdata to extract ALU controls, branch indicators, and memory controls.
+    wire [31:0] next_pc =
+        trap                      ? pc_plus_4   :
+        dec_pc_sel                ? jalr_target :
+        (dec_jump | branch_taken) ? rel_target  :
+                                     pc_plus_4;
 
-    // TODO (Teammate): Instantiate alu.v
-    // Wire ALU inputs to (rs1_rdata / pc) and (rs2_rdata / imm), then connect comparison outputs above.
+    always @(posedge i_clk) begin
+        if (i_rst) pc <= RESET_ADDR;
+        else       pc <= next_pc;
+    end
+
+    assign o_imem_raddr     = pc;
+    assign o_retire_pc      = pc;
+    assign o_retire_next_pc = next_pc;  
 
     // TODO (Teammate): Data Memory Interface
     // Drive o_dmem_addr (word-aligned ALU result), o_dmem_ren, o_dmem_wen, o_dmem_mask, and o_dmem_wdata.
+    assign o_dmem_addr = {alu_result[31:2], 2'b00};
+    assign o_dmem_ren  = dec_dmem_ren & ~trap;
+    assign o_dmem_wen  = dec_dmem_wen & ~trap;
+
+    assign o_dmem_mask =
+        dec_dmem_memw ? 4'b1111 :
+        dec_dmem_memh ? (dmem_byte_off[1] ? 4'b1100 : 4'b0011) :
+        dec_dmem_memb ? (dmem_byte_off == 2'b00 ? 4'b0001 :
+                          dmem_byte_off == 2'b01 ? 4'b0010 :
+                          dmem_byte_off == 2'b10 ? 4'b0100 :
+                                                    4'b1000) :
+                         4'b0000;
+
+    assign o_dmem_wdata =
+        dec_dmem_memw ? rs2_rdata :
+        dec_dmem_memh ? (dmem_byte_off[1] ? {rs2_rdata[15:0], 16'b0}
+                                           : {16'b0, rs2_rdata[15:0]}) :
+        dec_dmem_memb ? (dmem_byte_off == 2'b00 ? {24'b0, rs2_rdata[7:0]} :
+                          dmem_byte_off == 2'b01 ? {16'b0, rs2_rdata[7:0], 8'b0} :
+                          dmem_byte_off == 2'b10 ? {8'b0, rs2_rdata[7:0], 16'b0} :
+                                                    {rs2_rdata[7:0], 24'b0}) :
+                         32'b0;
+
+    wire [7:0]  load_byte = dmem_byte_off == 2'b00 ? i_dmem_rdata[7:0]   :
+                             dmem_byte_off == 2'b01 ? i_dmem_rdata[15:8] :
+                             dmem_byte_off == 2'b10 ? i_dmem_rdata[23:16]:
+                                                       i_dmem_rdata[31:24];
+    wire [15:0] load_half = dmem_byte_off[1] ? i_dmem_rdata[31:16] : i_dmem_rdata[15:0];
+
+    wire [31:0] load_data =
+        dec_dmem_memb ? (dec_dmem_memu ? {24'b0, load_byte} : {{24{load_byte[7]}}, load_byte}) :
+        dec_dmem_memh ? (dec_dmem_memu ? {16'b0, load_half} : {{16{load_half[15]}}, load_half}) :
+                         i_dmem_rdata;
 
     // TODO (Teammate): Remaining Retire Signals
     // Drive o_retire_valid, o_retire_inst, o_retire_halt, o_retire_rs1_raddr/data,
     // o_retire_rs2_raddr/data, and o_retire_rd_waddr/data.
+    
+    reg valid_r;
+    always @(posedge i_clk) begin
+        if (i_rst) valid_r <= 1'b0;
+        else       valid_r <= 1'b1;
+    end
+    assign o_retire_valid = valid_r;
+    assign o_retire_inst  = i_imem_rdata;
+    assign o_retire_trap  = trap;
+    assign o_retire_halt  = dec_halt;
+
+    wire is_r_type = dec_legal & ~dec_op2_sel & ~dec_branch & ~is_lui & ~is_jal & ~is_auipc;
+    wire reads_rs1 = dec_legal & ~is_lui & ~is_auipc & ~is_jal;
+    wire reads_rs2 = dec_legal & (is_r_type | dec_branch | dec_dmem_wen);
+
+    assign o_retire_rs1_raddr = reads_rs1 ? dec_rs1 : 5'd0;
+    assign o_retire_rs1_rdata = reads_rs1 ? rs1_rdata : 32'd0;
+    assign o_retire_rs2_raddr = reads_rs2 ? dec_rs2 : 5'd0;
+    assign o_retire_rs2_rdata = reads_rs2 ? rs2_rdata : 32'd0;
+
+    assign o_retire_rd_waddr = rf_waddr;
+    assign o_retire_rd_wdata = rf_wdata;
 
 endmodule
 
