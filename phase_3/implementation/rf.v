@@ -1,3 +1,7 @@
+// AI USE DISCLOSURE:
+// OpenAI ChatGPT was used as an aid in the development of this file.
+// Accessed September 2026.
+
 `default_nettype none
 
 // The register file is effectively a single cycle memory with 32-bit words
@@ -49,29 +53,23 @@ module rf #(
 );
 
     // ------------------------------------
-
-    // 32 registers of 32-bit width
+        // 32 registers of 32-bit width
     reg [31:0] registers [31:0];
-    integer i;
 
-    // Zero-initialize register array for simulation
-    initial begin
-        for (i = 0; i < 32; i = i + 1) begin
-            registers[i] = 32'd0;
-        end
-    end
-
-    // Synchronous write and reset logic
-    // Gated solely by checking if destination is not x0 (no i_rd_wen)
-    always @(posedge i_clk) begin
-        if (i_rst) begin
-            for (i = 0; i < 32; i = i + 1) begin
-                registers[i] <= 32'd0;
+    // Each architectural register gets its own sequential logic.
+    // This is a generate loop, not a procedural loop.
+    genvar g;
+    generate
+        for (g = 1; g < 32; g = g + 1) begin : gen_registers
+            always @(posedge i_clk) begin
+                if (i_rst) begin
+                    registers[g] <= 32'd0;
+                end else if (i_rd_waddr == g) begin
+                    registers[g] <= i_rd_wdata;
+                end
             end
-        end else if (i_rd_waddr != 5'd0) begin
-            registers[i_rd_waddr] <= i_rd_wdata;
         end
-    end
+    endgenerate
 
     // Asynchronous read logic with parameter-controlled bypass
     generate
