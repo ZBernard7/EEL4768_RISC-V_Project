@@ -477,23 +477,36 @@ module hart #(
         dec_dmem_memh ? (dec_dmem_memu ? {16'b0, load_half} : {{16{load_half[15]}}, load_half}) :
                          i_dmem_rdata;
 
+    wire [31:0] writeback_data;
+    assign writeback_data =
+        dec_rd_sel[0] ? alu_result :
+        dec_rd_sel[1] ? dec_imm :
+        dec_rd_sel[2] ? pc_plus_4 :
+                        load_data;
+    assign rf_waddr = trap ? 5'd0 : dec_rd;
+    assign rf_wdata = writeback_data;
     // TODO (Teammate): Remaining Retire Signals
     // Drive o_retire_valid, o_retire_inst, o_retire_halt, o_retire_rs1_raddr/data,
     // o_retire_rs2_raddr/data, and o_retire_rd_waddr/data.
     
-    reg valid_r;
-    always @(posedge i_clk) begin
-        if (i_rst) valid_r <= 1'b0;
-        else       valid_r <= 1'b1;
-    end
-    assign o_retire_valid = valid_r;
+    assign o_retire_valid = ~i_rst;
+
     assign o_retire_inst  = i_imem_rdata;
     assign o_retire_trap  = trap;
     assign o_retire_halt  = dec_halt;
 
-    wire is_r_type = dec_legal & ~dec_op2_sel & ~dec_branch & ~is_lui & ~is_jal & ~is_auipc;
-    wire reads_rs1 = dec_legal & ~is_lui & ~is_auipc & ~is_jal;
-    wire reads_rs2 = dec_legal & (is_r_type | dec_branch | dec_dmem_wen);
+    wire is_r_type =
+        dec_legal & ~dec_halt &
+        ~dec_op2_sel & ~dec_branch &
+        ~is_lui & ~is_jal & ~is_auipc;
+
+    wire reads_rs1 =
+        dec_legal & ~dec_halt &
+        ~is_lui & ~is_auipc & ~is_jal;
+
+    wire reads_rs2 =
+        dec_legal & ~dec_halt &
+        (is_r_type | dec_branch | dec_dmem_wen);
 
     assign o_retire_rs1_raddr = reads_rs1 ? dec_rs1 : 5'd0;
     assign o_retire_rs1_rdata = reads_rs1 ? rs1_rdata : 32'd0;
