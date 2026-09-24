@@ -1,3 +1,7 @@
+// AI USE DISCLOSURE:
+// OpenAI ChatGPT was used as an aid in the development of this file.
+// Accessed September 2026.
+
 `default_nettype none
 
 module imm (

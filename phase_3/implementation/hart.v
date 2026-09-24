@@ -1,5 +1,9 @@
 `default_nettype none
 
+// AI USE DISCLOSURE:
+// OpenAI ChatGPT was used as an aid in the development of this file.
+// Accessed September 2026.
+
 // A hart ("hardware thread") is one complete RISC-V CPU: it fetches an
 // instruction, decodes it, executes it, and writes the result back. This one
 // is single-cycle, so all four of those happen in the same clock cycle and
