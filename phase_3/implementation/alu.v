@@ -41,10 +41,8 @@ module alu (
     output wire        o_eq,
     // Set less than result. This is used downstream to determine if a
     // branch should be taken.
-    output wire        o_slt
-    //FOR INSTANTIATION
-    //The sltuu instruction and unsigned brnch comparisons (bltu/bgeu).
-    output wire  o_sltu
+    output wire        o_slt,
+    output wire        o_sltu
 );
     // Your implementation goes under here
     // ------------------------------------
