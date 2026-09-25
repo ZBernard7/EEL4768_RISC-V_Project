@@ -47,13 +47,11 @@ module alu (
     // Your implementation goes under here
     // ------------------------------------
 
-    //Part 1 of Phase #2
-        
+    // Part 1 of Phase #2
     // 32-bit 2's-complement ADD/SUB w/ Carry Lookahead Adder
 
-
-    // Addition: op2_modified = i_op2,so carry[0] = 0 (same as A+B)
-    // Subtraction: op2_modified = ~i_op2,so carry[0] = 1 (same as A+1+~B)
+    // Addition: op2_modified = i_op2, so carry[0] = 0 (same as A+B)
+    // Subtraction: op2_modified = ~i_op2, so carry[0] = 1 (same as A+1+~B)
 
     wire [31:0] op2_modified;
     assign op2_modified = i_op2 ^ {32{i_sub}};
@@ -61,73 +59,79 @@ module alu (
     wire [31:0] gener;
     wire [31:0] propagate;
 
-    assign gener  = i_op1 & op2_modified;
+    assign gener     = i_op1 & op2_modified;
     assign propagate = i_op1 ^ op2_modified;
     wire [32:0] carry;
     assign carry[0] = i_sub;
-// 8 groups of 4 bits,each group has its own CLA
-    wire [7:0] group_generate;//i put the 32 bits into 8 groups (so basically 4 bits at a time)
+
+    // 8 groups of 4 bits, each group has its own CLA
+    wire [7:0] group_generate;
     wire [7:0] group_propagate;
-//bite 3:0
+
+    // bits 3:0
     assign group_propagate[0] =
         propagate[3] & propagate[2] & propagate[1] & propagate[0];
     assign group_generate[0] =
         gener[3] | (propagate[3] & gener[2]) | (propagate[3] & propagate[2] & gener[1]) |
         (propagate[3] & propagate[2] & propagate[1] & gener[0]);
-//bits 7:4
+
+    // bits 7:4
     assign group_propagate[1] =
         propagate[7] & propagate[6] & propagate[5] & propagate[4];
     assign group_generate[1] =
         gener[7] | (propagate[7] & gener[6]) | (propagate[7] & propagate[6] & gener[5]) |
         (propagate[7] & propagate[6] & propagate[5] & gener[4]);
-//bits 11:8
+
+    // bits 11:8
     assign group_propagate[2] =
         propagate[11] & propagate[10] & propagate[9] & propagate[8];
     assign group_generate[2] =
         gener[11] | (propagate[11] & gener[10]) | (propagate[11] & propagate[10] & gener[9]) |
         (propagate[11] & propagate[10] & propagate[9] & gener[8]);
-//bit 15:12
+
+    // bits 15:12
     assign group_propagate[3] =
         propagate[15] & propagate[14] & propagate[13] & propagate[12];
     assign group_generate[3] =
         gener[15] | (propagate[15] & gener[14]) | (propagate[15] & propagate[14] & gener[13]) |
         (propagate[15] & propagate[14] & propagate[13] & gener[12]);
-// 19:16
+
+    // bits 19:16
     assign group_propagate[4] =
         propagate[19] & propagate[18] & propagate[17] & propagate[16];
     assign group_generate[4] =
         gener[19] | (propagate[19] & gener[18]) | (propagate[19] & propagate[18] & gener[17]) |
         (propagate[19] & propagate[18] & propagate[17] & gener[16]);
-//bit 23:20
+
+    // bits 23:20
     assign group_propagate[5] =
         propagate[23] & propagate[22] & propagate[21] & propagate[20];
     assign group_generate[5] =
         gener[23] | (propagate[23] & gener[22]) | (propagate[23] & propagate[22] & gener[21]) |
         (propagate[23] & propagate[22] & propagate[21] & gener[20]);
-//bits: 27:24
+
+    // bits 27:24
     assign group_propagate[6] =
-    propagate[27] & propagate[26] & propagate[25] & propagate[24];
+        propagate[27] & propagate[26] & propagate[25] & propagate[24];
     assign group_generate[6] =
         gener[27] | (propagate[27] & gener[26]) | (propagate[27] & propagate[26] & gener[25]) |
         (propagate[27] & propagate[26] & propagate[25] & gener[24]);
-//bits: 31:28
+
+    // bits 31:28
     assign group_propagate[7] =
         propagate[31] & propagate[30] & propagate[29] & propagate[28];
     assign group_generate[7] =
         gener[31] | (propagate[31] & gener[30]) | (propagate[31] & propagate[30] & gener[29]) |
         (propagate[31] & propagate[30] & propagate[29] & gener[28]);
 
-
-//Lookahead for the groups, the carry being assigned is going to the next group
-    //PROPAGATE MEANS PASS A CARRY THROUGH
-
+    // Lookahead for the groups
     assign carry[4] =
         group_generate[0] | (group_propagate[0] & carry[0]);
     
     assign carry[8] =
         group_generate[1] | (group_propagate[1] & group_generate[0]) |
         (group_propagate[1] & group_propagate[0] & carry[0]);
-//carry[8] is coming out of group 1
+
     assign carry[12] =
         group_generate[2] | (group_propagate[2] & group_generate[1]) |
         (group_propagate[2] & group_propagate[1] & group_generate[0]) |
@@ -343,30 +347,14 @@ module alu (
          propagate[28] & carry[28]);
 
     wire [31:0] add_sub_result;
-
     assign add_sub_result = propagate ^ carry[31:0];
 
+    // Left Shifter (SLL)
     wire [31:0] sll_stage1;
     wire [31:0] sll_stage2;
     wire [31:0] sll_stage4;
     wire [31:0] sll_stage8;
     wire [31:0] sll_result;
-
-    wire [31:0] srl_stage1;
-    wire [31:0] srl_stage2;
-    wire [31:0] srl_stage4;
-    wire [31:0] srl_stage8;
-    wire [31:0] srl_result;
-
-    wire [31:0] bit_equal;
-    wire [32:0] unsigned_less;
-    wire signed_less;
-
-    wire [31:0] slt_result;
-    wire [31:0] sltu_result;
-    wire [31:0] xor_result;
-    wire [31:0] or_result;
-    wire [31:0] and_result;
 
     assign sll_stage1 =
         i_op2[0] ? {i_op1[30:0], 1'b0} : i_op1;
@@ -382,6 +370,41 @@ module alu (
 
     assign sll_result =
         i_op2[4] ? {sll_stage8[15:0], 16'b0000000000000000} : sll_stage8;
+
+    // Right Shifter (SRL / SRA)
+    wire [31:0] srl_stage1;
+    wire [31:0] srl_stage2;
+    wire [31:0] srl_stage4;
+    wire [31:0] srl_stage8;
+    wire [31:0] srl_result;
+
+    wire shift_sign = i_arith & i_op1[31];
+
+    assign srl_stage1 =
+        i_op2[0] ? {{ 1{shift_sign}}, i_op1[31:1]} : i_op1;
+
+    assign srl_stage2 =
+        i_op2[1] ? {{ 2{shift_sign}}, srl_stage1[31:2]} : srl_stage1;
+
+    assign srl_stage4 =
+        i_op2[2] ? {{ 4{shift_sign}}, srl_stage2[31:4]} : srl_stage2;
+
+    assign srl_stage8 =
+        i_op2[3] ? {{ 8{shift_sign}}, srl_stage4[31:8]} : srl_stage4;
+
+    assign srl_result =
+        i_op2[4] ? {{16{shift_sign}}, srl_stage8[31:16]} : srl_stage8;
+
+    // Comparators (EQ, SLT, SLTU)
+    wire [31:0] bit_equal;
+    wire [32:0] unsigned_less;
+    wire signed_less;
+
+    wire [31:0] slt_result;
+    wire [31:0] sltu_result;
+    wire [31:0] xor_result;
+    wire [31:0] or_result;
+    wire [31:0] and_result;
 
     assign bit_equal[31] = ~(i_op1[31] ^ i_op2[31]);
     assign bit_equal[30] = ~(i_op1[30] ^ i_op2[30]);
@@ -416,10 +439,6 @@ module alu (
     assign bit_equal[1]  = ~(i_op1[1]  ^ i_op2[1]);
     assign bit_equal[0]  = ~(i_op1[0]  ^ i_op2[0]);
 
-    // eq_chain[k] means "bits 31 downto k are all equal between i_op1 and i_op2".
-    // This is needed because a lower-order bit is only allowed to decide the
-    // comparison if every bit above it (all the way up to bit 31) was equal --
-    // a single adjacent bit_equal[k] is not enough to know that.
     wire [32:0] eq_chain;
     assign eq_chain[32] = 1'b1;
     assign eq_chain[31] = bit_equal[31];
@@ -444,21 +463,16 @@ module alu (
     assign eq_chain[12] = bit_equal[12] & eq_chain[13];
     assign eq_chain[11] = bit_equal[11] & eq_chain[12];
     assign eq_chain[10] = bit_equal[10] & eq_chain[11];
-    assign eq_chain[9]  = bit_equal[9]  & eq_chain[10];
-    assign eq_chain[8]  = bit_equal[8]  & eq_chain[9];
-    assign eq_chain[7]  = bit_equal[7]  & eq_chain[8];
-    assign eq_chain[6]  = bit_equal[6]  & eq_chain[7];
-    assign eq_chain[5]  = bit_equal[5]  & eq_chain[6];
-    assign eq_chain[4]  = bit_equal[4]  & eq_chain[5];
-    assign eq_chain[3]  = bit_equal[3]  & eq_chain[4];
-    assign eq_chain[2]  = bit_equal[2]  & eq_chain[3];
-    assign eq_chain[1]  = bit_equal[1]  & eq_chain[2];
+    assign eq_chain[9]   = bit_equal[9]  & eq_chain[10];
+    assign eq_chain[8]   = bit_equal[8]  & eq_chain[9];
+    assign eq_chain[7]   = bit_equal[7]  & eq_chain[8];
+    assign eq_chain[6]   = bit_equal[6]  & eq_chain[7];
+    assign eq_chain[5]   = bit_equal[5]  & eq_chain[6];
+    assign eq_chain[4]   = bit_equal[4]  & eq_chain[5];
+    assign eq_chain[3]   = bit_equal[3]  & eq_chain[4];
+    assign eq_chain[2]   = bit_equal[2]  & eq_chain[3];
+    assign eq_chain[1]   = bit_equal[1]  & eq_chain[2];
 
-    // unsigned_less[k] = "considering bits 31 downto k, is i_op1 < i_op2?"
-    // Once a decision is made at some higher bit, it must stick regardless
-    // of what any lower bit looks like on its own -- so a lower bit is only
-    // allowed to make a *new* decision when everything above it tied
-    // (eq_chain[k+1]).
     assign unsigned_less[32] = 1'b0;
 
     assign unsigned_less[31] =
@@ -597,35 +611,8 @@ module alu (
     assign slt_result = {31'b0, signed_less};
 
     assign xor_result = i_op1 ^ i_op2;
-
     assign or_result  = i_op1 | i_op2;
-
     assign and_result = i_op1 & i_op2;
-
-    assign srl_stage1 =
-        i_op2[0]
-        ? {{1{i_arith ? i_op1[31] : 1'b0}}, i_op1[31:1]}
-        : i_op1;
-
-    assign srl_stage2 =
-        i_op2[1]
-        ? {{2{i_arith ? i_op1[31] : 1'b0}}, srl_stage1[31:2]}
-        : srl_stage1;
-
-    assign srl_stage4 =
-        i_op2[2]
-        ? {{4{i_arith ? i_op1[31] : 1'b0}}, srl_stage2[31:4]}
-        : srl_stage2;
-
-    assign srl_stage8 =
-        i_op2[3]
-        ? {{8{i_arith ? i_op1[31] : 1'b0}}, srl_stage4[31:8]}
-        : srl_stage4;
-
-    assign srl_result =
-        i_op2[4]
-        ? {{16{i_arith ? i_op1[31] : 1'b0}}, srl_stage8[31:16]}
-        : srl_stage8;
 
     assign o_result =
         (i_opsel == 3'b000) ? add_sub_result :
@@ -641,7 +628,7 @@ module alu (
 
     assign o_slt =
         i_unsigned ? unsigned_less[0] : signed_less;
-//again for instanitation
+
     assign o_sltu = unsigned_less[0];
 
 endmodule

@@ -131,22 +131,12 @@ module hart #(
     //   keeps the control logic clean, self-documenting, and avoids magic numbers.
     // =========================================================================
     
-    //Zahra's Notes
-    //Everything about "what kind of instruction is this" now comes out of
+    // Zahra's Notes:
+    // Everything about "what kind of instruction is this" now comes out of
     // the decoder instead of being re-derived here. Basically our
-    // immeidate is already the right one for whatever instruction so theres
+    // immediate is already the right one for whatever instruction so there's
     // no need to compute imm_b/imm_j/imm_i 
     // and no second imm.v instance (decoder already has one inside it).
-    // wire [6:0] opcode = i_imem_rdata[6:0];
-    // wire [2:0] funct3 = i_imem_rdata[14:12];
-
-    // localparam OPCODE_BRANCH = 7'b1100011; // B-type conditional branches
-    // localparam OPCODE_JAL    = 7'b1101111; // J-type unconditional jump
-    // localparam OPCODE_JALR   = 7'b1100111; // I-type register-indirect jump
-
-    // wire is_branch = (opcode == OPCODE_BRANCH);
-    // wire is_jal    = (opcode == OPCODE_JAL);
-    // wire is_jalr   = (opcode == OPCODE_JALR);
 
     wire        dec_legal, dec_halt;
     wire [ 4:0] dec_rs1, dec_rs2, dec_rd;
@@ -192,39 +182,23 @@ module hart #(
         .o_pc_sel          (dec_pc_sel)
     );
 
-
     // =========================================================================
     // SECTION 2: Immediate Generation (Offset Reconstruction)
     // -------------------------------------------------------------------------
     // What it does:
     //   Unscrambles the scattered immediate bits for B, J, and I instruction
     //   types and sign-extends them into full 32-bit signed offsets.
-    //
-    // Design Choice for Smooth Running:
-    //   Hardcoded bit-0 to 1'b0 directly in imm_b and imm_j concatenations.
-    //   Because RISC-V branch and jump targets are always 2-byte aligned, bit 0
-    //   is never stored in the instruction word; appending 0 here eliminates
-    //   the need for an extra shift-left hardware unit.
     // =========================================================================
 
+    // Handled internally by decoder and imm.v.
 
-//Zahra's Notes:
-//same rf thing as before its just that now rs1 and 2 addresses
-//are being read from the decoder
-    // wire [31:0] imm_b = {{20{i_imem_rdata[31]}},
-    //                       i_imem_rdata[7],
-    //                       i_imem_rdata[30:25],
-    //                       i_imem_rdata[11:8],
-    //                       1'b0};
-
-    // wire [31:0] imm_j = {{12{i_imem_rdata[31]}},
-    //                       i_imem_rdata[19:12],
-    //                       i_imem_rdata[20],
-    //                       i_imem_rdata[30:21],
-    //                       1'b0};
-
-    // wire [31:0] imm_i = {{20{i_imem_rdata[31]}},
-    //                       i_imem_rdata[31:20]};
+    // =========================================================================
+    // SECTION 3: Register File Instantiation & Datapath Interface
+    // -------------------------------------------------------------------------
+    // What it does:
+    //   Slices register address fields (rs1, rs2) from the instruction and plugs
+    //   in rf.v so read data is immediately available to target and ALU logic.
+    // =========================================================================
 
     wire [31:0] rs1_rdata, rs2_rdata;
     wire [ 4:0] rf_waddr;
@@ -241,57 +215,7 @@ module hart #(
         .i_rd_wdata (rf_wdata)
     );
 
-    // =========================================================================
-    // SECTION 3: Register File Instantiation & Datapath Interface
-    // -------------------------------------------------------------------------
-    // What it does:
-    //   Slices register address fields (rs1, rs2) from the instruction and plugs
-    //   in rf.v so read data is immediately available to target and ALU logic[cite: 2].
-    //
-    // Design Choices for Smooth Running:
-    //   1. BYPASS_EN is set to 0 as required for single-cycle designs (writes and
-    //      reads happen across standard edge sampling; bypass is unnecessary)[cite: 2].
-    //   2. Initialized unused inputs (rf_waddr, rf_wdata) and ALU flag wires
-    //      to known default states (32'd0 / 1'b0)[cite: 2]. This prevents high-impedance
-    //      or unknown ('x') propagation during isolated unit testing.
-    // =========================================================================
-
-// the alu wasnt instantiated yet and uses 2 operands fr the decoders op1_sel & op2_se4l
-//no comparator module bc alu is doing branch compare and arthimetc
-
-    // wire [4:0] rs1_addr = i_imem_rdata[19:15];
-    // wire [4:0] rs2_addr = i_imem_rdata[24:20];
-
-    // wire [31:0] rs1_rdata; // Directly feeds JALR target calculation below
-    // wire [31:0] rs2_rdata;
-
-    // // TODO (Teammate - Writeback): Replace these placeholder stubs with the
-    // // destination register rd address (or 5'd0 if no write) and the writeback mux output.
-    // wire [4:0]  rf_waddr = 5'd0;
-    // wire [31:0] rf_wdata = 32'd0;
-
-    // rf #(.BYPASS_EN(0)) u_rf (
-    //     .i_clk      (i_clk),
-    //     .i_rst      (i_rst),
-    //     .i_rs1_raddr(rs1_addr),
-    //     .o_rs1_rdata(rs1_rdata),
-    //     .i_rs2_raddr(rs2_addr),
-    //     .o_rs2_rdata(rs2_rdata),
-    //     .i_rd_waddr (rf_waddr),
-    //     .i_rd_wdata (rf_wdata)
-    // );
-
-    // // TODO (Teammate - ALU): Connect these wires to the comparison outputs of alu.v
-    // // (e.g., .o_eq(alu_eq), .o_slt(alu_slt), .o_sltu(alu_sltu)).
-    // wire alu_eq   = 1'b0;
-    // wire alu_slt  = 1'b0;
-    // wire alu_sltu = 1'b0;
-
-    // // TODO (Teammate - Trap Logic): Replace this tie-off with the actual trap detection signal.
-    // // When 1'b1, next_pc must stay pc_plus_4 and memory writes/register writes must be suppressed.
-    // assign o_retire_trap = 1'b0;
-
-
+    reg  [31:0] pc;
     wire [31:0] alu_op1 = dec_op1_sel ? pc : rs1_rdata;
     wire [31:0] alu_op2 = dec_op2_sel ? dec_imm : rs2_rdata;
 
@@ -317,118 +241,40 @@ module hart #(
     // What it does:
     //   Calculates every candidate next-PC address in parallel combinational logic:
     //     - pc_plus_4: Sequential instruction step.
-    //     - branch_target: Relative offset from PC for conditional branches and JAL.
+    //     - rel_target: Relative offset from PC for conditional branches and JAL.
     //     - jalr_target: Absolute base-plus-offset address from register rs1.
-    //
-    // Design Choice for Smooth Running:
-    //   Shared the relative adder between JAL and branches (`pc + (is_jal ? imm_j : imm_b)`).
-    //   This synthesizes to a single 32-bit adder rather than two separate adders,
-    //   saving gate area and matching single-cycle timing paths cleanly.
-    //   Also applies the RISC-V specification masking `& ~32'd1` directly to
-    //   guarantee JALR never branches to an odd byte address.
     // =========================================================================
 
     wire is_lui   = dec_rd_sel[1];
     wire is_auipc = dec_op1_sel;
     wire is_jal   = dec_jump & ~dec_pc_sel;
-    // reg  [31:0] pc;
-    // wire [31:0] pc_plus_4;
-    // wire [31:0] branch_target;
-    // wire [31:0] jalr_target;
-    // wire [31:0] next_pc;
-    // wire        branch_taken;
 
-    // assign pc_plus_4     = pc + 32'd4;
-    // assign branch_target = pc + (is_jal ? imm_j : imm_b);
-    // assign jalr_target   = (rs1_rdata + imm_i) & ~32'd1;
-
+    wire [31:0] pc_plus_4   = pc + 32'd4;
+    wire [31:0] rel_target  = pc + dec_imm;
+    wire [31:0] jalr_target = alu_result & ~32'd1;
 
     // =========================================================================
     // SECTION 5: Branch Condition Evaluation
     // -------------------------------------------------------------------------
     // What it does:
-    //   Inspects funct3 to select the comparison operation (equality, signed
-    //   less-than, unsigned less-than) and tests against the ALU condition flags.
-    //
-    // Design Choice for Smooth Running:
-    //   Inverted comparison flags (!alu_eq, !alu_slt, !alu_sltu) directly handle
-    //   opposite conditions (BNE, BGE, BGEU). This reuses comparison results
-    //   without needing duplicate subtraction or comparison hardware.
+    //   Inspects funct3 to select the comparison operation and tests against
+    //   the ALU condition flags.
     // =========================================================================
-//Zahra's Notes: we dont need to redecode here
-    // assign branch_taken = is_branch && (
-    //     (funct3 == 3'b000 &&  alu_eq)   || // BEQ  (Equal)
-    //     (funct3 == 3'b001 && !alu_eq)   || // BNE  (Not Equal)
-    //     (funct3 == 3'b100 &&  alu_slt)  || // BLT  (Signed Less Than)
-    //     (funct3 == 3'b101 && !alu_slt)  || // BGE  (Signed Greater Than or Equal)
-    //     (funct3 == 3'b110 &&  alu_sltu) || // BLTU (Unsigned Less Than)
-    //     (funct3 == 3'b111 && !alu_sltu)    // BGEU (Unsigned Greater Than or Equal)
-    // );
 
     wire branch_condition = dec_branch_equal ? alu_eq : alu_slt;
     wire branch_taken     = dec_branch & (branch_condition ^ dec_branch_invert);
 
     // =========================================================================
-    // SECTION 6: PCSrc Selection Multiplexer
+    // SECTION 6: PCSrc Selection Multiplexer & Trap Handling
     // -------------------------------------------------------------------------
     // What it does:
     //   Decides which calculated address becomes next_pc for the next clock cycle.
-    //
-    // Design Choice for Smooth Running:
-    //   Strict priority ordering ensures correct execution semantics:
-    //     1. Trap assertion overrides all redirects and forces sequential pc_plus_4
-    //        (preventing side-effects on misaligned or illegal instructions).
-    //     2. JALR (indirect register jump) takes priority over PC-relative logic.
-    //     3. JAL / taken branches take the relative target.
-    //     4. Default falls through sequentially to pc_plus_4.
     // =========================================================================
-    //Zahra's notes
-    reg  [31:0] pc;
-    wire [31:0] pc_plus_4   = pc + 32'd4;
-    wire [31:0] rel_target  = pc + dec_imm;
-    wire [31:0] jalr_target = alu_result & ~32'd1;
 
-    // assign next_pc = o_retire_trap            ? pc_plus_4     :
-    //                  is_jalr                  ? jalr_target   :
-    //                  (is_jal || branch_taken) ? branch_target :
-    //                                             pc_plus_4;
-
-
-    // =========================================================================
-    // SECTION 7: Program Counter State Register & Interface Routing
-    // -------------------------------------------------------------------------
-    // What it does:
-    //   Implements the sequential state element (D-flip-flops) storing the PC
-    //   and routes the address to the external instruction memory and retire bus.
-    //
-    // Design Choice for Smooth Running:
-    //   Uses synchronous active-high reset matching the processor's clock domain.
-    //   Directly routes the registered `pc` to `o_imem_raddr` and `o_retire_pc`,
-    //   and routes combinational `next_pc` to `o_retire_next_pc` so testbenches
-    //   can evaluate next-cycle branch predictions on the current cycle.
-    // =========================================================================
-    //ZB
     wire [1:0] dmem_byte_off   = alu_result[1:0];
     wire       dmem_misaligned = (dec_dmem_ren | dec_dmem_wen) &
                                   |(dmem_byte_off & dec_dmem_align);
     wire       trap = ~dec_legal | dmem_misaligned;
-
-    // always @(posedge i_clk) begin
-    //     if (i_rst) begin
-    //         pc <= RESET_ADDR;
-    //     end else begin
-    //         pc <= next_pc;
-    //     end
-    // end
-
-    // assign o_imem_raddr     = pc;
-    // assign o_retire_pc      = pc;
-    // assign o_retire_next_pc = next_pc;
-
-
-    // =========================================================================
-    // SECTION 8: Teammate Deliverables (Pending Integration)
-    // =========================================================================
 
     wire [31:0] next_pc =
         trap                      ? pc_plus_4   :
@@ -436,17 +282,30 @@ module hart #(
         (dec_jump | branch_taken) ? rel_target  :
                                      pc_plus_4;
 
+    // =========================================================================
+    // SECTION 7: Program Counter State Register & Interface Routing
+    // -------------------------------------------------------------------------
+    // What it does:
+    //   Implements the sequential state element storing the PC and routes
+    //   addresses to instruction memory and the retire bus.
+    // =========================================================================
+
     always @(posedge i_clk) begin
-        if (i_rst) pc <= RESET_ADDR;
-        else       pc <= next_pc;
+        if (i_rst) begin
+            pc <= RESET_ADDR;
+        end else begin
+            pc <= next_pc;
+        end
     end
 
     assign o_imem_raddr     = pc;
     assign o_retire_pc      = pc;
-    assign o_retire_next_pc = next_pc;  
+    assign o_retire_next_pc = next_pc;
 
-    // TODO (Teammate): Data Memory Interface
-    // Drive o_dmem_addr (word-aligned ALU result), o_dmem_ren, o_dmem_wen, o_dmem_mask, and o_dmem_wdata.
+    // =========================================================================
+    // SECTION 8: Data Memory Interface & Writeback Logic
+    // =========================================================================
+
     assign o_dmem_addr = {alu_result[31:2], 2'b00};
     assign o_dmem_ren  = dec_dmem_ren & ~trap;
     assign o_dmem_wen  = dec_dmem_wen & ~trap;
@@ -455,46 +314,45 @@ module hart #(
         dec_dmem_memw ? 4'b1111 :
         dec_dmem_memh ? (dmem_byte_off[1] ? 4'b1100 : 4'b0011) :
         dec_dmem_memb ? (dmem_byte_off == 2'b00 ? 4'b0001 :
-                          dmem_byte_off == 2'b01 ? 4'b0010 :
-                          dmem_byte_off == 2'b10 ? 4'b0100 :
-                                                    4'b1000) :
+                         dmem_byte_off == 2'b01 ? 4'b0010 :
+                         dmem_byte_off == 2'b10 ? 4'b0100 :
+                                                   4'b1000) :
                          4'b0000;
 
+    // Replicate sub-word data across lanes so active lane(s) capture valid bits
     assign o_dmem_wdata =
         dec_dmem_memw ? rs2_rdata :
-        dec_dmem_memh ? (dmem_byte_off[1] ? {rs2_rdata[15:0], 16'b0}
-                                           : {16'b0, rs2_rdata[15:0]}) :
-        dec_dmem_memb ? (dmem_byte_off == 2'b00 ? {24'b0, rs2_rdata[7:0]} :
-                          dmem_byte_off == 2'b01 ? {16'b0, rs2_rdata[7:0], 8'b0} :
-                          dmem_byte_off == 2'b10 ? {8'b0, rs2_rdata[7:0], 16'b0} :
-                                                    {rs2_rdata[7:0], 24'b0}) :
-                         32'b0;
+        dec_dmem_memh ? {2{rs2_rdata[15:0]}} :
+        dec_dmem_memb ? {4{rs2_rdata[7:0]}} :
+                        32'b0;
 
-    wire [7:0]  load_byte = dmem_byte_off == 2'b00 ? i_dmem_rdata[7:0]   :
-                             dmem_byte_off == 2'b01 ? i_dmem_rdata[15:8] :
-                             dmem_byte_off == 2'b10 ? i_dmem_rdata[23:16]:
-                                                       i_dmem_rdata[31:24];
+    wire [7:0] load_byte =
+        (dmem_byte_off == 2'b00) ? i_dmem_rdata[7:0]   :
+        (dmem_byte_off == 2'b01) ? i_dmem_rdata[15:8]  :
+        (dmem_byte_off == 2'b10) ? i_dmem_rdata[23:16] :
+                                   i_dmem_rdata[31:24];
+
     wire [15:0] load_half = dmem_byte_off[1] ? i_dmem_rdata[31:16] : i_dmem_rdata[15:0];
 
     wire [31:0] load_data =
         dec_dmem_memb ? (dec_dmem_memu ? {24'b0, load_byte} : {{24{load_byte[7]}}, load_byte}) :
         dec_dmem_memh ? (dec_dmem_memu ? {16'b0, load_half} : {{16{load_half[15]}}, load_half}) :
-                         i_dmem_rdata;
+                        i_dmem_rdata;
 
-    wire [31:0] writeback_data;
-    assign writeback_data =
+    wire [31:0] writeback_data =
         dec_rd_sel[0] ? alu_result :
         dec_rd_sel[1] ? dec_imm :
         dec_rd_sel[2] ? pc_plus_4 :
                         load_data;
+
     assign rf_waddr = trap ? 5'd0 : dec_rd;
     assign rf_wdata = writeback_data;
-    // TODO (Teammate): Remaining Retire Signals
-    // Drive o_retire_valid, o_retire_inst, o_retire_halt, o_retire_rs1_raddr/data,
-    // o_retire_rs2_raddr/data, and o_retire_rd_waddr/data.
-    
-    assign o_retire_valid = ~i_rst;
 
+    // =========================================================================
+    // SECTION 9: Retire Interface
+    // =========================================================================
+
+    assign o_retire_valid = ~i_rst;
     assign o_retire_inst  = i_imem_rdata;
     assign o_retire_trap  = trap;
     assign o_retire_halt  = dec_halt;
