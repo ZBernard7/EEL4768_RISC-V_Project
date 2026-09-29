@@ -1,18 +1,17 @@
-# Phase 2 Documentation
+# Phase 4 Documentation
 
-You will find the documentation and problem descriptions for phase two in `phase_2/documentation/phase_2.pdf`. Be sure to **read all pages** of the PDF. There are four parts to this phase, that break down as follows.
+You will find the documentation and problem descriptions for phase four in `phase_4/documentation/phase_4.pdf`. Be sure to **read all pages** of the PDF. There is one part to this phase, with possible extra credit points. You will also submit all previous files (i.e., `decoder.v`, `imm.v`, `alu.v`, `rf.v`).
 
-1. ALU
+1. Pipelined RV32I CPU (`hart.v`)
 
-2. Immediate Generator
+# Rubric
+| Category | Points |
+| -------- | -------- |
+| Pipelined Processor    | 3    |
+| Hazard Detection    | 2    |
+| Forwarding Logic    | 2    |
+| Total | 7 |
 
-3. Register File
-
-4. Instruction Decoder
-
-`phase_2/skeletons/` has a starting point for each of the four: the module
-header and the full port list, documented port by port, with the body left for
-you.
 
 # Install
 
@@ -26,12 +25,12 @@ Once you have conda, follow the instructions below.
 
 ```
 git clone https://github.com/UnaryLab/EEL4768_RISC-V_Project
-cd EEL4768_RISC-V_Project/phase_2/
+cd EEL4768_RISC-V_Project/phase_4/
 conda env create -f environment.yaml
 ```
 Then, you can activate the conda environment
 ```
-conda activate eel4768_phase_2
+conda activate eel4768_phase_4
 ```
 You need to reactivate or make sure you are in this conda env before running the test script everytime.
 
@@ -43,8 +42,8 @@ Both of these solutions will run a linux operating system. If you have issues, p
 
 # Testing your work
 
-**There is no autograder in this repository.** Verifying that your `alu.v`,
-`imm.v`, `rf.v` and `decoder.v` behave correctly is part of the assignment.
+**There is no autograder in this repository.** Verifying that your `hart.v`,
+`alu.v`, `imm.v`, `rf.v` and `decoder.v` behave correctly is part of the assignment.
 Follow the example testbench outlined in `phase_2/example/` to understand how to write a testbench.
 
 ## The example
@@ -58,13 +57,34 @@ Follow the example testbench outlined in `phase_2/example/` to understand how to
   read.** It is commented as a walkthrough, and its structure is the one every
   testbench you write this semester will have.
 
+## The traces
+
+`phase_4/traces/` holds two programs for your hart to run and the trace it should
+produce:
+
+- **`no_hazard_program.hex`**: Does not consider hazards.
+- **`hazard_program.hex`**: Considers hazards.
+
+There are then 3 files for expected outputs.
+
+- **`no_hazard.trace`**: Expected output for `no_hazard_program.hex`
+- **`hazard_no_fwd.trace`**: Expected output for `hazard_program.hex` ***with no*** forwarding logic.
+- **`hazard_no_fwd.trace`**: Expected output for `hazard_program.hex` ***with*** forwarding logic.
 
 ## Run iverilog
 
 To run the example testbench, follow the script below. To run your own verilog file and testbench, just replace the paths for the testbench and target file.
 
 ```
+cd EEL4768_RISC-V_Project/phase_2/
 iverilog -s opmux_tb -o sim example/opmux_tb.v example/opmux.v
+./sim
+```
+
+For phase 4, list your testbench and every file your hart needs:
+
+```
+iverilog -s hart_tb -o sim hart_tb.v hart.v alu.v imm.v rf.v decoder.v
 ./sim
 ```
 
@@ -90,5 +110,7 @@ The example also writes `opmux.vcd`:
 ```
 gtkwave opmux.vcd
 ```
+
+Add `$dumpfile`/`$dumpvars` to your own testbench the same way to get a waveform of your hart.
 
 This outputs a waveform, similar to the ones from digital systems, to view. This is helpfull for debugging.
