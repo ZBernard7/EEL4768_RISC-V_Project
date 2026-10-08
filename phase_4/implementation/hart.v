@@ -1,8 +1,8 @@
-`default_nettype none
-
 // AI USE DISCLOSURE:
 // OpenAI ChatGPT and Claude were used as aids in the development of this file.
 // Accessed October 2026.
+
+`default_nettype none
 
 module hart #(
     // -------------------------------------------------------------------------
@@ -589,7 +589,7 @@ module hart #(
             mem_wb_halt          <= ex_mem_halt;
             mem_wb_rs1           <= ex_mem_rs1;
             mem_wb_rs2           <= ex_mem_rs2;
-            mem_wb_rd            <= mem_wb_trap ? 5'd0 : ex_mem_rd;
+            mem_wb_rd <= ex_mem_trap ? 5'd0 : ex_mem_rd;
             mem_wb_rs1_rdata     <= ex_mem_rs1_rdata;
             mem_wb_rs2_rdata     <= ex_mem_rs2_rdata;
             mem_wb_imm           <= ex_mem_imm;
