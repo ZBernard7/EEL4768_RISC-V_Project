@@ -172,7 +172,7 @@ module hart #(
     wire [31:0] rf_rs1_rdata, rf_rs2_rdata;
     wire [ 4:0] wb_rd;
     wire [31:0] wb_data;
-
+reg [ 3:0] ex_mem_rd_sel;
     rf #(.BYPASS_EN(1)) u_rf (
         .i_clk      (i_clk),
         .i_rst      (i_rst),
@@ -334,14 +334,16 @@ module hart #(
         (mem_wb_reg_write && (wb_rd != 5'd0)     && (wb_rd == id_ex_rs2))     ? 2'b01 :
                                                                                  2'b00;
 
+reg [31:0] ex_mem_imm;
+reg [31:0] ex_mem_pc;
+
     // Select the actual result computed in the EX/MEM stage
     // (Handles ALU, LUI/AUIPC immediates, and JAL/JALR return addresses)
-    wire [31:0] ex_mem_stage_val =
-        ex_mem_rd_sel[0] ? ex_mem_alu_result :
-        ex_mem_rd_sel[1] ? ex_mem_imm :
-        ex_mem_rd_sel[2] ? (ex_mem_pc + 32'd4) :
-                           ex_mem_alu_result;
-
+   wire [31:0] ex_mem_stage_val;
+assign ex_mem_stage_val = ex_mem_rd_sel[0] ? ex_mem_alu_result :
+                          ex_mem_rd_sel[1] ? ex_mem_imm :
+                          ex_mem_rd_sel[2] ? (ex_mem_pc + 32'd4) :
+                                             ex_mem_alu_result;
     wire [31:0] ex_rs1_val = (forward_a == 2'b10) ? ex_mem_stage_val :
                              (forward_a == 2'b01) ? wb_data :
                                                     id_ex_rs1_rdata;
@@ -406,7 +408,7 @@ module hart #(
     // WHAT: Saves the computed ALU result, store data, and trap flags for Stage 4.
     // If the instruction trapped, force destination register rd to x0 so it can't write.
     // -------------------------------------------------------------------------
-    reg [31:0] ex_mem_pc;
+    
     reg [31:0] ex_mem_next_pc;
     reg [31:0] ex_mem_inst;
     reg        ex_mem_valid;
@@ -416,7 +418,7 @@ module hart #(
     reg [ 4:0] ex_mem_rs2;
     reg [31:0] ex_mem_rs1_rdata;
     reg [31:0] ex_mem_rs2_rdata;
-    reg [31:0] ex_mem_imm;
+    
     reg        ex_mem_dmem_ren;
     reg        ex_mem_dmem_wen;
     reg [ 1:0] ex_mem_dmem_align;
@@ -424,7 +426,7 @@ module hart #(
     reg        ex_mem_dmem_memh;
     reg        ex_mem_dmem_memw;
     reg        ex_mem_dmem_memu;
-    reg [ 3:0] ex_mem_rd_sel;
+    
 
     always @(posedge i_clk) begin
         if (i_rst) begin
