@@ -55,14 +55,13 @@ module fpu (
     output wire        o_rm_trap
 );
 
-// Write your code here.
 // ---------- Instruction fields and control ----------
 
 wire [6:0] opcode = i_inst[6:0];
 wire [6:0] funct7 = i_inst[31:25];
 wire [2:0] funct3 = i_inst[14:12];
 
-wire is_fp = opcode == 7'h53;
+wire is_fp  = opcode == 7'h53;
 wire is_csr = opcode == 7'h73;
 
 reg [7:0] fcsr;
@@ -93,6 +92,7 @@ wire arithmetic_instruction = rounding_instruction &&
     !((opcode == 7'h53) && ((funct7 == 7'h60) || (funct7 == 7'h68)));
 wire [31:0] arithmetic_result;
 wire [4:0] arithmetic_flags;
+
 fpu_arith arithmetic_unit (
  .i_clk(i_clk), .i_rst(i_rst),
  .i_valid(i_valid && arithmetic_instruction && !o_rm_trap),
@@ -116,13 +116,13 @@ wire b_frac_zero = i_frs2[22:0] == 23'd0;
 
 wire a_zero = a_exp_zero && a_frac_zero;
 wire b_zero = b_exp_zero && b_frac_zero;
-wire a_inf = a_exp_ones && a_frac_zero;
-wire a_nan = a_exp_ones && !a_frac_zero;
-wire b_nan = b_exp_ones && !b_frac_zero;
+wire a_inf  = a_exp_ones && a_frac_zero;
+wire a_nan  = a_exp_ones && !a_frac_zero;
+wire b_nan  = b_exp_ones && !b_frac_zero;
 wire a_snan = a_nan && !i_frs1[22];
 wire b_snan = b_nan && !i_frs2[22];
 wire a_subnormal = a_exp_zero && !a_frac_zero;
-wire a_normal = !a_exp_zero && !a_exp_ones;
+wire a_normal    = !a_exp_zero && !a_exp_ones;
 
 // +0 and -0 compare equal. NaNs never compare equal.
 wire fp_equal =
@@ -140,7 +140,7 @@ wire fp_less =
 
 wire [9:0] class_mask = {
     a_nan && i_frs1[22],       // bit 9: quiet NaN
-    a_snan,                   // bit 8: signaling NaN
+    a_snan,                    // bit 8: signaling NaN
     a_inf && !a_sign,          // bit 7: positive infinity
     a_normal && !a_sign,       // bit 6: positive normal
     a_subnormal && !a_sign,    // bit 5: positive subnormal
@@ -173,7 +173,7 @@ wire [31:0] max_result =
 
 reg [31:0] csr_old;
 reg [31:0] csr_new;
-reg [7:0] csr_next;
+reg [7:0]  csr_next;
 
 wire [31:0] csr_operand =
     funct3[2] ? {27'd0, i_inst[19:15]} : i_xrs1;
@@ -486,7 +486,6 @@ always @(*) begin
                     operation_flags = cv_int_to_fp_flags;
                 end
 
-                // Arithmetic logic goes here later.
                 default: begin
                     fp_result = 32'd0;
                     int_result = 32'd0;

@@ -1,7 +1,6 @@
 // AI USE DISCLOSURE:
 // OpenAI ChatGPT and Claude were used as aids in the development of this file.
 // Accessed October 2026.
-
 `default_nettype none
 
 module hart #(
@@ -125,7 +124,9 @@ module hart #(
 `endif
 );
 
-    // Pipeline signals are declared before use for strict checking.
+    // =========================================================================
+    // SECTION 1: Pipeline Interconnect Declarations & Signals
+    // =========================================================================
     wire [31:0] o_imem_raddr, i_imem_rdata;
     wire [31:0] o_dmem_addr, o_dmem_wdata, i_dmem_rdata;
     wire [3:0] o_dmem_mask;
@@ -287,73 +288,51 @@ module hart #(
     reg [4:0] mem_wb_fflags;
     wire [31:0] wb_fp_data;
 
-
-
-
-    // Phase 6 cache bridge. Long operations freeze every pipeline stage.
-
-
-
-
-
-
-
+    // =========================================================================
+    // SECTION 2: Cache Subsystem & Stall Network
+    // =========================================================================
     assign mem_request = o_dmem_ren || o_dmem_wen;
     assign ex_stall = alu_busy || fpu_busy;
     assign pipe_stall = ex_stall || !ic_ready || (mem_request && !dc_ready);
     assign ex_advance = id_ex_valid && !pipe_stall;
-    cache #(.EVICT_POLICY(EVICT_POLICY), .NUM_WAYS(NUM_WAYS),
-      .CACHE_SIZE(CACHE_SIZE), .BLOCK_SIZE(BLOCK_SIZE), .PREFETCH_EN(PREFETCH_EN)) icache (
-      .i_clk(i_clk), .i_rst(i_rst), .i_ren(!i_rst), .i_wen(1'b0),
-      .i_addr(o_imem_raddr), .i_mask(4'b1111), .i_wdata(32'd0),
-      .o_ready(ic_ready), .o_rdata(i_imem_rdata),
-      .o_mem_rd(o_imem_rd), .o_mem_rd_addr(o_imem_rd_addr),
-      .i_mem_valid(i_imem_valid), .i_mem_rd_data(i_imem_rd_data),
-      .o_mem_wr(), .o_mem_wr_addr(), .o_mem_wr_data(), .o_mem_wr_be()
-    );
-    // Gate requests on EX stalls and instruction-cache freezes: stores fire once.
-    cache #(.EVICT_POLICY(EVICT_POLICY), .NUM_WAYS(NUM_WAYS),
-      .CACHE_SIZE(CACHE_SIZE), .BLOCK_SIZE(BLOCK_SIZE), .PREFETCH_EN(PREFETCH_EN)) dcache (
-      .i_clk(i_clk), .i_rst(i_rst),
-      .i_ren(o_dmem_ren && !ex_stall && ic_ready),
-      .i_wen(o_dmem_wen && !ex_stall && ic_ready),
-      .i_addr(o_dmem_addr), .i_mask(o_dmem_mask), .i_wdata(o_dmem_wdata),
-      .o_ready(dc_ready), .o_rdata(i_dmem_rdata),
-      .o_mem_rd(o_dmem_rd), .o_mem_rd_addr(o_dmem_rd_addr),
-      .i_mem_valid(i_dmem_valid), .i_mem_rd_data(i_dmem_rd_data),
-      .o_mem_wr(o_dmem_wr), .o_mem_wr_addr(o_dmem_wr_addr),
-      .o_mem_wr_data(o_dmem_wr_data), .o_mem_wr_be(o_dmem_wr_be)
+
+    cache #(
+        .EVICT_POLICY(EVICT_POLICY), .NUM_WAYS(NUM_WAYS),
+        .CACHE_SIZE(CACHE_SIZE), .BLOCK_SIZE(BLOCK_SIZE), .PREFETCH_EN(PREFETCH_EN)
+    ) icache (
+        .i_clk(i_clk), .i_rst(i_rst), .i_ren(!i_rst), .i_wen(1'b0),
+        .i_addr(o_imem_raddr), .i_mask(4'b1111), .i_wdata(32'd0),
+        .o_ready(ic_ready), .o_rdata(i_imem_rdata),
+        .o_mem_rd(o_imem_rd), .o_mem_rd_addr(o_imem_rd_addr),
+        .i_mem_valid(i_imem_valid), .i_mem_rd_data(i_imem_rd_data),
+        .o_mem_wr(), .o_mem_wr_addr(), .o_mem_wr_data(), .o_mem_wr_be()
     );
 
+    cache #(
+        .EVICT_POLICY(EVICT_POLICY), .NUM_WAYS(NUM_WAYS),
+        .CACHE_SIZE(CACHE_SIZE), .BLOCK_SIZE(BLOCK_SIZE), .PREFETCH_EN(PREFETCH_EN)
+    ) dcache (
+        .i_clk(i_clk), .i_rst(i_rst),
+        .i_ren(o_dmem_ren && !ex_stall && ic_ready),
+        .i_wen(o_dmem_wen && !ex_stall && ic_ready),
+        .i_addr(o_dmem_addr), .i_mask(o_dmem_mask), .i_wdata(o_dmem_wdata),
+        .o_ready(dc_ready), .o_rdata(i_dmem_rdata),
+        .o_mem_rd(o_dmem_rd), .o_mem_rd_addr(o_dmem_rd_addr),
+        .i_mem_valid(i_dmem_valid), .i_mem_rd_data(i_dmem_rd_data),
+        .o_mem_wr(o_dmem_wr), .o_mem_wr_addr(o_dmem_wr_addr),
+        .o_mem_wr_data(o_dmem_wr_data), .o_mem_wr_be(o_dmem_wr_be)
+    );
 
     assign dec_xrs1 = dec_frs1 ? 5'd0 : dec_rs1;
     assign dec_xrs2 = dec_frs2 ? 5'd0 : dec_rs2;
 
-
-
-
     // =========================================================================
-    // Signals fed backwards from later stages
+    // SECTION 3: Instruction Fetch (IF) Stage
     // =========================================================================
-
-
-
-
-    // =========================================================================
-    // 1. INSTRUCTION FETCH (IF) STAGE
-    // -------------------------------------------------------------------------
-    // CHANGE 3: UPDATING THE PROGRAM COUNTER (PC)
-    // WHAT: Decide the next instruction address:
-    //   1. If a branch/jump in Execute was taken, jump to the branch target.
-    //   2. If we are paused for a load-use stall, freeze the PC in place.
-    //   3. Otherwise, keep walking forward normally (pc + 4).
-    // -------------------------------------------------------------------------
-
     assign pc_plus_4_if = pc_reg + 32'd4;
-
     assign next_pc = branch_taken_ex ? branch_target_ex :
-                          load_use_stall  ? pc_reg :
-                                            pc_plus_4_if;
+                     load_use_stall  ? pc_reg :
+                                       pc_plus_4_if;
 
     always @(posedge i_clk) begin
         if (i_rst) begin
@@ -365,20 +344,7 @@ module hart #(
 
     assign o_imem_raddr = pc_reg;
 
-    // =========================================================================
-    // 2. IF / ID PIPELINE REGISTER (Tray between Fetch and Decode)
-    // -------------------------------------------------------------------------
-    // CHANGE 4: PASSING INSTRUCTIONS FROM FETCH TO DECODE
-    // WHAT: Saves the fetched instruction and PC for the next clock tick.
-    // - On branch taken: Erase what was fetched (replace with a harmless NOP)
-    //   because we guessed wrong.
-    // - On load-use stall: Don't update, hold onto the current instruction so
-    //   it doesn't get lost while we wait.
-    // -------------------------------------------------------------------------
-
-
-
-
+    // IF/ID Pipeline Register Latching
     always @(posedge i_clk) begin
         if (i_rst) begin
             if_id_pc    <= 32'h0000_0000;
@@ -386,34 +352,20 @@ module hart #(
             if_id_valid <= 1'b0;
         end else if (!pipe_stall) begin
             if (branch_taken_ex) begin
-            if_id_pc    <= 32'h0000_0000;
-            if_id_inst  <= 32'h0000_0013; // RISC-V NOP: addi x0, x0, 0
-            if_id_valid <= 1'b0;
+                if_id_pc    <= 32'h0000_0000;
+                if_id_inst  <= 32'h0000_0013;
+                if_id_valid <= 1'b0;
             end else if (!load_use_stall) begin
-            if_id_pc    <= pc_reg;
-            if_id_inst  <= i_imem_rdata;
-            if_id_valid <= 1'b1;
+                if_id_pc    <= pc_reg;
+                if_id_inst  <= i_imem_rdata;
+                if_id_valid <= 1'b1;
             end
         end
     end
 
     // =========================================================================
-    // 3. INSTRUCTION DECODE (ID) STAGE
+    // SECTION 4: Instruction Decode (ID) Stage & Hazard Generator
     // =========================================================================
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     decoder u_decoder (
         .i_inst            (if_id_inst),
         .o_legal           (dec_legal),
@@ -447,17 +399,7 @@ module hart #(
         .o_pc_sel          (dec_pc_sel)
     );
 
-    // -------------------------------------------------------------------------
-    // CHANGE 5: SAME-CYCLE REGISTER BYPASS (BYPASS_EN = 1)
-    // WHAT: Turn on BYPASS_EN = 1 inside rf.v.
-    // WHY: If Stage 5 is writing a result into a register on the exact same clock
-    // tick Stage 2 is trying to read it, this makes the register file immediately
-    // hand over the new value without making us wait an extra cycle.
-    // -------------------------------------------------------------------------
-
-
-
-
+    // Register File Instance
     rf #(.BYPASS_EN(BYPASS_EN)) u_rf (
         .i_clk      (i_clk),
         .i_rst      (i_rst),
@@ -476,233 +418,166 @@ module hart #(
 
     assign id_trap = if_id_valid & ~dec_legal;
 
-    // -------------------------------------------------------------------------
-    // CHANGE 6: LOAD-USE HAZARD DETECTOR (THE PAUSE BUTTON)
-    // WHAT: Check if the instruction currently in Execute is loading from RAM,
-    // and the instruction right behind it in Decode wants to use that same register.
-    // WHY: RAM data isn't ready yet, so we can't forward it. We must pause the
-    // pipeline for 1 clock tick by inserting a blank bubble (NOP) into Execute.
-    // -------------------------------------------------------------------------
-
- // Declared here for the hazard check; not re-declared below
-
+    // RAW Hazard Checking across Integer and FP Registers
     assign dep_ex = id_ex_valid && (id_ex_rd != 0) &&
         ((dec_xrs1 == id_ex_rd) || (dec_xrs2 == id_ex_rd));
     assign dep_mem = ex_mem_valid && (ex_mem_rd != 0) &&
         ((dec_xrs1 == ex_mem_rd) || (dec_xrs2 == ex_mem_rd));
     assign dep_wb = mem_wb_valid && (mem_wb_rd != 0) &&
         ((dec_xrs1 == mem_wb_rd) || (dec_xrs2 == mem_wb_rd));
+
     assign fp_dep_ex = id_ex_valid && id_ex_frd &&
-        ((dec_frs1 && dec_rs1 == id_ex_fd) ||
-         (dec_frs2 && dec_rs2 == id_ex_fd) ||
-         (dec_frs3 && dec_rs3 == id_ex_fd));
+        ((dec_frs1 && (dec_rs1 == id_ex_fd)) ||
+         (dec_frs2 && (dec_rs2 == id_ex_fd)) ||
+         (dec_frs3 && (dec_rs3 == id_ex_fd)));
     assign fp_dep_mem = ex_mem_valid && ex_mem_frd &&
-        ((dec_frs1 && dec_rs1 == ex_mem_fd) ||
-         (dec_frs2 && dec_rs2 == ex_mem_fd) ||
-         (dec_frs3 && dec_rs3 == ex_mem_fd));
+        ((dec_frs1 && (dec_rs1 == ex_mem_fd)) ||
+         (dec_frs2 && (dec_rs2 == ex_mem_fd)) ||
+         (dec_frs3 && (dec_rs3 == ex_mem_fd)));
     assign fp_dep_wb = mem_wb_valid && mem_wb_frd &&
-        ((dec_frs1 && dec_rs1 == mem_wb_fd) ||
-         (dec_frs2 && dec_rs2 == mem_wb_fd) ||
-         (dec_frs3 && dec_rs3 == mem_wb_fd));
+        ((dec_frs1 && (dec_rs1 == mem_wb_fd)) ||
+         (dec_frs2 && (dec_rs2 == mem_wb_fd)) ||
+         (dec_frs3 && (dec_rs3 == mem_wb_fd)));
+
     assign load_use_stall = if_id_valid &&
         ((dep_ex && (id_ex_dmem_ren || (FWD_EN == 0))) ||
          (dep_mem && (FWD_EN == 0)) ||
          (dep_wb && (BYPASS_EN == 0)) || fp_dep_ex || fp_dep_mem ||
          (fp_dep_wb && (BYPASS_EN == 0)));
 
-
     // =========================================================================
-    // 4. ID / EX PIPELINE REGISTER (Tray between Decode and Execute)
-    // -------------------------------------------------------------------------
-    // CHANGE 7: PASSING DECODED INFO TO EXECUTE
-    // WHAT: Latch control signals, register numbers, and read data into flip-flops.
-    // If we have to pause (load_use_stall) or toss out a bad guess (branch_taken),
-    // clear this register to zero so it acts as a do-nothing bubble (NOP).
-    // -------------------------------------------------------------------------
-
-
-
-
-
-
-
-    // NOTE: id_ex_rd declared above
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    // SECTION 5: ID / EX Pipeline Register
+    // =========================================================================
     always @(posedge i_clk) begin
         if (i_rst) begin
-            id_ex_pc              <= 32'h0000_0000;
-            id_ex_inst            <= 32'h0000_0013; // Bubble / NOP
-            id_ex_valid           <= 1'b0;
-            id_ex_trap            <= 1'b0;
-            id_ex_halt            <= 1'b0;
-            id_ex_rs1             <= 5'd0;
-            id_ex_rs2             <= 5'd0;
-            id_ex_rd              <= 5'd0;
-            id_ex_rs1_rdata       <= 32'd0;
-            id_ex_rs2_rdata       <= 32'd0;
-            id_ex_imm             <= 32'd0;
-            id_ex_op1_sel         <= 1'b0;
-            id_ex_op2_sel         <= 1'b0;
-            id_ex_alu_opsel       <= 3'b000;
-            id_ex_alu_sub         <= 1'b0;
-            id_ex_alu_unsigned    <= 1'b0;
-            id_ex_alu_arith       <= 1'b0;
-            id_ex_branch          <= 1'b0;
-            id_ex_jump            <= 1'b0;
-            id_ex_branch_equal    <= 1'b0;
+            id_ex_pc            <= 32'h0000_0000;
+            id_ex_inst          <= 32'h0000_0013; // NOP
+            id_ex_valid         <= 1'b0;
+            id_ex_trap          <= 1'b0;
+            id_ex_halt          <= 1'b0;
+            id_ex_rs1           <= 5'd0;
+            id_ex_rs2           <= 5'd0;
+            id_ex_rd            <= 5'd0;
+            id_ex_rs1_rdata     <= 32'd0;
+            id_ex_rs2_rdata     <= 32'd0;
+            id_ex_imm           <= 32'd0;
+            id_ex_op1_sel       <= 1'b0;
+            id_ex_op2_sel       <= 1'b0;
+            id_ex_alu_opsel     <= 3'b000;
+            id_ex_alu_sub       <= 1'b0;
+            id_ex_alu_unsigned  <= 1'b0;
+            id_ex_alu_arith     <= 1'b0;
+            id_ex_branch        <= 1'b0;
+            id_ex_jump          <= 1'b0;
+            id_ex_branch_equal  <= 1'b0;
             id_ex_branch_unsigned <= 1'b0;
-            id_ex_branch_invert   <= 1'b0;
-            id_ex_dmem_ren        <= 1'b0;
-            id_ex_dmem_wen        <= 1'b0;
-            id_ex_dmem_align      <= 2'b00;
-            id_ex_dmem_memb       <= 1'b0;
-            id_ex_dmem_memh       <= 1'b0;
-            id_ex_dmem_memw       <= 1'b0;
-            id_ex_dmem_memu       <= 1'b0;
-            id_ex_rd_sel          <= 5'b00001;
-            id_ex_pc_sel          <= 1'b0;
+            id_ex_branch_invert <= 1'b0;
+            id_ex_dmem_ren      <= 1'b0;
+            id_ex_dmem_wen      <= 1'b0;
+            id_ex_dmem_align    <= 2'b00;
+            id_ex_dmem_memb     <= 1'b0;
+            id_ex_dmem_memh     <= 1'b0;
+            id_ex_dmem_memw     <= 1'b0;
+            id_ex_dmem_memu     <= 1'b0;
+            id_ex_rd_sel        <= 5'b00001;
+            id_ex_pc_sel        <= 1'b0;
         end else if (!pipe_stall) begin
             if (branch_taken_ex || load_use_stall) begin
-            id_ex_pc              <= 32'h0000_0000;
-            id_ex_inst            <= 32'h0000_0013; // Bubble / NOP
-            id_ex_valid           <= 1'b0;
-            id_ex_trap            <= 1'b0;
-            id_ex_halt            <= 1'b0;
-            id_ex_rs1             <= 5'd0;
-            id_ex_rs2             <= 5'd0;
-            id_ex_rd              <= 5'd0;
-            id_ex_rs1_rdata       <= 32'd0;
-            id_ex_rs2_rdata       <= 32'd0;
-            id_ex_imm             <= 32'd0;
-            id_ex_op1_sel         <= 1'b0;
-            id_ex_op2_sel         <= 1'b0;
-            id_ex_alu_opsel       <= 3'b000;
-            id_ex_alu_sub         <= 1'b0;
-            id_ex_alu_unsigned    <= 1'b0;
-            id_ex_alu_arith       <= 1'b0;
-            id_ex_branch          <= 1'b0;
-            id_ex_jump            <= 1'b0;
-            id_ex_branch_equal    <= 1'b0;
-            id_ex_branch_unsigned <= 1'b0;
-            id_ex_branch_invert   <= 1'b0;
-            id_ex_dmem_ren        <= 1'b0;
-            id_ex_dmem_wen        <= 1'b0;
-            id_ex_dmem_align      <= 2'b00;
-            id_ex_dmem_memb       <= 1'b0;
-            id_ex_dmem_memh       <= 1'b0;
-            id_ex_dmem_memw       <= 1'b0;
-            id_ex_dmem_memu       <= 1'b0;
-            id_ex_rd_sel          <= 5'b00001;
-            id_ex_pc_sel          <= 1'b0;
+                id_ex_pc            <= 32'h0000_0000;
+                id_ex_inst          <= 32'h0000_0013;
+                id_ex_valid         <= 1'b0;
+                id_ex_trap          <= 1'b0;
+                id_ex_halt          <= 1'b0;
+                id_ex_rs1           <= 5'd0;
+                id_ex_rs2           <= 5'd0;
+                id_ex_rd            <= 5'd0;
+                id_ex_rs1_rdata     <= 32'd0;
+                id_ex_rs2_rdata     <= 32'd0;
+                id_ex_imm           <= 32'd0;
+                id_ex_op1_sel       <= 1'b0;
+                id_ex_op2_sel       <= 1'b0;
+                id_ex_alu_opsel     <= 3'b000;
+                id_ex_alu_sub       <= 1'b0;
+                id_ex_alu_unsigned  <= 1'b0;
+                id_ex_alu_arith     <= 1'b0;
+                id_ex_branch        <= 1'b0;
+                id_ex_jump          <= 1'b0;
+                id_ex_branch_equal  <= 1'b0;
+                id_ex_branch_unsigned <= 1'b0;
+                id_ex_branch_invert <= 1'b0;
+                id_ex_dmem_ren      <= 1'b0;
+                id_ex_dmem_wen      <= 1'b0;
+                id_ex_dmem_align    <= 2'b00;
+                id_ex_dmem_memb     <= 1'b0;
+                id_ex_dmem_memh     <= 1'b0;
+                id_ex_dmem_memw     <= 1'b0;
+                id_ex_dmem_memu     <= 1'b0;
+                id_ex_rd_sel        <= 5'b00001;
+                id_ex_pc_sel        <= 1'b0;
             end else begin
-            id_ex_pc              <= if_id_pc;
-            id_ex_inst            <= if_id_inst;
-            id_ex_valid           <= if_id_valid;
-            id_ex_trap            <= id_trap;
-            id_ex_halt            <= dec_halt;
-            id_ex_rs1             <= dec_xrs1;
-            id_ex_rs2             <= dec_xrs2;
-            id_ex_rd              <= dec_rd;
-            id_ex_rs1_rdata       <= rf_rs1_rdata;
-            id_ex_rs2_rdata       <= rf_rs2_rdata;
-            id_ex_imm             <= dec_imm;
-            id_ex_op1_sel         <= dec_op1_sel;
-            id_ex_op2_sel         <= dec_op2_sel;
-            id_ex_alu_opsel       <= dec_alu_opsel;
-            id_ex_alu_sub         <= dec_alu_sub;
-            id_ex_alu_unsigned    <= dec_alu_unsigned;
-            id_ex_alu_arith       <= dec_alu_arith;
-            id_ex_branch          <= dec_branch;
-            id_ex_jump            <= dec_jump;
-            id_ex_branch_equal    <= dec_branch_equal;
-            id_ex_branch_unsigned <= dec_branch_unsigned;
-            id_ex_branch_invert   <= dec_branch_invert;
-            id_ex_dmem_ren        <= dec_dmem_ren;
-            id_ex_dmem_wen        <= dec_dmem_wen;
-            id_ex_dmem_align      <= dec_dmem_align;
-            id_ex_dmem_memb       <= dec_dmem_memb;
-            id_ex_dmem_memh       <= dec_dmem_memh;
-            id_ex_dmem_memw       <= dec_dmem_memw;
-            id_ex_dmem_memu       <= dec_dmem_memu;
-            id_ex_rd_sel          <= dec_rd_sel;
-            id_ex_pc_sel          <= dec_pc_sel;
+                id_ex_pc            <= if_id_pc;
+                id_ex_inst          <= if_id_inst;
+                id_ex_valid         <= if_id_valid;
+                id_ex_trap          <= id_trap;
+                id_ex_halt          <= dec_halt;
+                id_ex_rs1           <= dec_xrs1;
+                id_ex_rs2           <= dec_xrs2;
+                id_ex_rd            <= dec_rd;
+                id_ex_rs1_rdata     <= rf_rs1_rdata;
+                id_ex_rs2_rdata     <= rf_rs2_rdata;
+                id_ex_imm           <= dec_imm;
+                id_ex_op1_sel       <= dec_op1_sel;
+                id_ex_op2_sel       <= dec_op2_sel;
+                id_ex_alu_opsel     <= dec_alu_opsel;
+                id_ex_alu_sub       <= dec_alu_sub;
+                id_ex_alu_unsigned  <= dec_alu_unsigned;
+                id_ex_alu_arith     <= dec_alu_arith;
+                id_ex_branch        <= dec_branch;
+                id_ex_jump          <= dec_jump;
+                id_ex_branch_equal  <= dec_branch_equal;
+                id_ex_branch_unsigned <= dec_branch_unsigned;
+                id_ex_branch_invert <= dec_branch_invert;
+                id_ex_dmem_ren      <= dec_dmem_ren;
+                id_ex_dmem_wen      <= dec_dmem_wen;
+                id_ex_dmem_align    <= dec_dmem_align;
+                id_ex_dmem_memb     <= dec_dmem_memb;
+                id_ex_dmem_memh     <= dec_dmem_memh;
+                id_ex_dmem_memw     <= dec_dmem_memw;
+                id_ex_dmem_memu     <= dec_dmem_memu;
+                id_ex_rd_sel        <= dec_rd_sel;
+                id_ex_pc_sel        <= dec_pc_sel;
             end
         end
     end
 
     // =========================================================================
-    // 5. EXECUTE (EX) STAGE & FORWARDING UNIT
-    // -------------------------------------------------------------------------
-    // CHANGE 8: FORWARDING UNIT (PASSING ANSWERS EARLY)
-    // WHAT: Check if the instructions ahead of us (in Stage 4 or Stage 5) are
-    // writing to the register we need right now.
-    // - If Stage 4 matches: Grab Stage 4's ALU result directly.
-    // - Else if Stage 5 matches: Grab Stage 5's final writeback data.
-    // - Else: Use the regular value read from the register file.
-    // WHY: Saves clock cycles by getting new answers immediately without waiting
-    // for them to be written into the register file.
-    // -------------------------------------------------------------------------
-
-
-
-
-
+    // SECTION 6: Execute (EX) Stage & Forwarding Logic
+    // =========================================================================
     assign forward_a =
         ((FWD_EN != 0) && ex_mem_reg_write && (ex_mem_rd != 5'd0) && (ex_mem_rd == id_ex_rs1)) ? 2'b10 :
         ((FWD_EN != 0) && mem_wb_reg_write && (wb_rd != 5'd0)     && (wb_rd == id_ex_rs1))     ? 2'b01 :
-                                                                                 2'b00;
+                                                                                                 2'b00;
 
     assign forward_b =
         ((FWD_EN != 0) && ex_mem_reg_write && (ex_mem_rd != 5'd0) && (ex_mem_rd == id_ex_rs2)) ? 2'b10 :
         ((FWD_EN != 0) && mem_wb_reg_write && (wb_rd != 5'd0)     && (wb_rd == id_ex_rs2))     ? 2'b01 :
-                                                                                 2'b00;
+                                                                                                 2'b00;
 
+    assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_result :
+                              ex_mem_rd_sel[1] ? ex_mem_imm :
+                              ex_mem_rd_sel[2] ? (ex_mem_pc + 32'd4) :
+                                                 ex_mem_alu_result;
 
-
-
-    // Select the actual result computed in the EX/MEM stage
-    // (Handles ALU, LUI/AUIPC immediates, and JAL/JALR return addresses)
-
-assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_result :
-                          ex_mem_rd_sel[1] ? ex_mem_imm :
-                          ex_mem_rd_sel[2] ? (ex_mem_pc + 32'd4) :
-                                             ex_mem_alu_result;
     assign ex_rs1_val = (forward_a == 2'b10) ? ex_mem_stage_val :
-                             (forward_a == 2'b01) ? wb_data :
-                                                    id_ex_rs1_rdata;
+                         (forward_a == 2'b01) ? wb_data :
+                                               id_ex_rs1_rdata;
 
     assign ex_rs2_val = (forward_b == 2'b10) ? ex_mem_stage_val :
-                             (forward_b == 2'b01) ? wb_data :
-                                                    id_ex_rs2_rdata;
-                                                    
-    // ALU Inputs (picks either the forwarded register value, PC, or immediate)
+                         (forward_b == 2'b01) ? wb_data :
+                                               id_ex_rs2_rdata;
+                                                       
     assign alu_op1 = id_ex_op1_sel ? id_ex_pc  : ex_rs1_val;
     assign alu_op2 = id_ex_op2_sel ? id_ex_imm : ex_rs2_val;
-
-
-
 
     alu u_alu (
         .i_clk(i_clk), .i_rst(i_rst),
@@ -720,12 +595,7 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
         .o_busy    (alu_busy)
     );
 
-    // -------------------------------------------------------------------------
-    // CHANGE 9: CHECKING BRANCHES HERE IN EXECUTE
-    // WHAT: Compare the forwarded numbers in the ALU to decide if the branch is taken.
-    // WHY: Section 4.1.3 explicitly requires checking branch conditions in Execute.
-    // If it is taken, branch_taken_ex turns high and clears wrong guesses in IF/ID.
-    // -------------------------------------------------------------------------
+    // Branch Condition Resolution
     assign branch_condition = id_ex_branch_equal ? alu_eq : alu_slt;
     assign branch_eval = id_ex_branch & (branch_condition ^ id_ex_branch_invert);
 
@@ -739,45 +609,15 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
 
     assign branch_target_ex = branch_target_calc;
 
-    // -------------------------------------------------------------------------
-    // CHANGE 10: CHECKING MEMORY ALIGNMENT TRAPS
-    // WHAT: Checks if a load or store uses an invalid unaligned address
-    // (e.g. reading a 4-byte word from address 1 instead of 0 or 4).
-    // WHY: If misaligned, mark this instruction as trapped so later stages can
-    // prevent it from accidentally modifying RAM or registers.
-    // -------------------------------------------------------------------------
+    // Trap & Alignment Check
     assign ex_dmem_byte_off = ex_alu_result[1:0];
     assign ex_dmem_misaligned = (id_ex_dmem_ren | id_ex_dmem_wen) &
                                     |(ex_dmem_byte_off & id_ex_dmem_align);
     assign ex_stage_trap = id_ex_trap | (id_ex_valid & ex_dmem_misaligned) | branch_misaligned | ex_rm_trap;
 
     // =========================================================================
-    // 6. EX / MEM PIPELINE REGISTER (Tray between Execute and Memory)
-    // -------------------------------------------------------------------------
-    // CHANGE 11: PASSING EXECUTION RESULTS TO MEMORY STAGE
-    // WHAT: Saves the computed ALU result, store data, and trap flags for Stage 4.
-    // If the instruction trapped, force destination register rd to x0 so it can't write.
-    // -------------------------------------------------------------------------
-    
-
-
-
-
-
-
-
-
-
-    
-
-
-
-
-
-
-
-    
-
+    // SECTION 7: EX / MEM Pipeline Register
+    // =========================================================================
     always @(posedge i_clk) begin
         if (i_rst) begin
             ex_mem_pc          <= 32'h0000_0000;
@@ -812,7 +652,7 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
             ex_mem_rs1         <= id_ex_rs1;
             ex_mem_rs2         <= id_ex_rs2;
             ex_mem_rd          <= ex_stage_trap ? 5'd0 : id_ex_rd;
-            ex_mem_rs1_rdata   <= ex_rs1_val; // Save forwarded value used by ALU
+            ex_mem_rs1_rdata   <= ex_rs1_val;
             ex_mem_rs2_rdata   <= ex_rs2_val;
             ex_mem_imm         <= id_ex_imm;
             ex_mem_alu_result  <= id_ex_rd_sel[4] ? ex_int_result : ex_alu_result;
@@ -829,16 +669,9 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
     end
 
     // =========================================================================
-    // 7. MEMORY ACCESS (MEM) STAGE
-    // -------------------------------------------------------------------------
-    // CHANGE 12: STORE DATA FORWARDING & CANCELING BAD MEMORY WRITES
-    // WHAT: 
-    // - Store forwarding: If saving to RAM and the value to store was just computed
-    //   by the instruction in Writeback, take that value immediately (mem_store_src).
-    // - Trap safety: If trapped, disable memory read and write completely.
-    // -------------------------------------------------------------------------
+    // SECTION 8: Memory Access (MEM) Stage
+    // =========================================================================
     assign mem_byte_off = ex_mem_alu_result[1:0];
-
     assign mem_store_src = ex_mem_store_data;
 
     assign o_dmem_addr = {ex_mem_alu_result[31:2], 2'b00};
@@ -874,37 +707,8 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
                            i_dmem_rdata;
 
     // =========================================================================
-    // 8. MEM / WB PIPELINE REGISTER (Tray between Memory and Writeback)
-    // -------------------------------------------------------------------------
-    // CHANGE 13: HOLDING DATA READY FOR WRITEBACK & SAVING MEMORY TRACE
-    // WHAT: Latches the loaded memory data or ALU result into Stage 5 flip-flops.
-    // Also saves the exact memory bus signals (address, mask, data) so the
-    // testbench can inspect them at the exact moment this instruction retires.
-    // -------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    // SECTION 9: MEM / WB Pipeline Register
+    // =========================================================================
     always @(posedge i_clk) begin
         if (i_rst) begin
             mem_wb_pc            <= 32'h0000_0000;
@@ -939,7 +743,7 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
             mem_wb_halt          <= ex_mem_halt;
             mem_wb_rs1           <= ex_mem_rs1;
             mem_wb_rs2           <= ex_mem_rs2;
-            mem_wb_rd <= ex_mem_trap ? 5'd0 : ex_mem_rd;
+            mem_wb_rd            <= ex_mem_trap ? 5'd0 : ex_mem_rd;
             mem_wb_rs1_rdata     <= ex_mem_rs1_rdata;
             mem_wb_rs2_rdata     <= ex_mem_rs2_rdata;
             mem_wb_imm           <= ex_mem_imm;
@@ -958,17 +762,9 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
     end
 
     // =========================================================================
-    // 9. WRITEBACK (WB) STAGE & RETIRE BUS
-    // -------------------------------------------------------------------------
-    // CHANGE 14: RETIRING ONLY COMPLETED INSTRUCTIONS
-    // WHAT:
-    // - Writeback: Pick which result to write to the register file (ALU, RAM, or PC+4).
-    // - Retire bus: Output the instruction details directly from Stage 5.
-    // - o_retire_valid stays low during bubbles, stalls, or flushes, and only turns
-    //   high when a real instruction crosses the finish line.
-    // -------------------------------------------------------------------------
+    // SECTION 10: Writeback (WB) & Floating-Point Pipeline Management
+    // =========================================================================
     assign mem_wb_reg_write = mem_wb_reg_write_reg;
-
     assign wb_rd = mem_wb_trap ? 5'd0 : mem_wb_rd;
 
     assign wb_data =
@@ -977,21 +773,21 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
         mem_wb_rd_sel[2] ? (mem_wb_pc + 32'd4) :
                            mem_wb_load_data;
 
-    // Retire Bus Outputs
-    assign o_retire_valid     = mem_wb_valid && !pipe_stall && !i_rst;
-    assign o_retire_inst      = mem_wb_inst;
-    assign o_retire_trap      = mem_wb_trap;
-    assign o_retire_halt      = mem_wb_halt;
-    assign o_retire_rs1_raddr = mem_wb_rs1;
-    assign o_retire_rs1_rdata = mem_wb_rs1_rdata;
-    assign o_retire_rs2_raddr = mem_wb_rs2;
-    assign o_retire_rs2_rdata = mem_wb_rs2_rdata;
-    assign o_retire_rd_waddr  = wb_rd;
-    assign o_retire_rd_wdata  = wb_data;
-    assign o_retire_pc        = mem_wb_pc;
-    assign o_retire_next_pc   = mem_wb_next_pc;
+    // Retire Bus Output Assignments
+    assign o_retire_valid      = mem_wb_valid && !pipe_stall && !i_rst;
+    assign o_retire_inst       = mem_wb_inst;
+    assign o_retire_trap       = mem_wb_trap;
+    assign o_retire_halt       = mem_wb_halt;
+    assign o_retire_rs1_raddr  = mem_wb_rs1;
+    assign o_retire_rs1_rdata  = mem_wb_rs1_rdata;
+    assign o_retire_rs2_raddr  = mem_wb_rs2;
+    assign o_retire_rs2_rdata  = mem_wb_rs2_rdata;
+    assign o_retire_rd_waddr   = wb_rd;
+    assign o_retire_rd_wdata   = wb_data;
+    assign o_retire_pc         = mem_wb_pc;
+    assign o_retire_next_pc    = mem_wb_next_pc;
 
-    // Retire Memory Operation Mirrors
+    // Retire Memory Operation Signals
     assign o_retire_dmem_addr  = mem_wb_dmem_addr;
     assign o_retire_dmem_ren   = mem_wb_dmem_ren;
     assign o_retire_dmem_wen   = mem_wb_dmem_wen;
@@ -999,22 +795,9 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
     assign o_retire_dmem_wdata = mem_wb_dmem_wdata;
     assign o_retire_dmem_rdata = mem_wb_dmem_rdata;
 
-    // Phase 6 FP pipeline metadata. No FP forwarding is required: ID stalls
-    // until each producer reaches WB (or commits when bypass is disabled).
-
-
-
-
-
-
-
-
-
-
-
-
-
+    // FPU Instantiation
     assign wb_fp_data = mem_wb_fp_result;
+
     fpu u_fpu (
       .i_clk(i_clk), .i_rst(i_rst), .i_inst(id_ex_inst),
       .i_valid(id_ex_valid && id_ex_fpu && !id_ex_trap),
@@ -1023,115 +806,127 @@ assign ex_mem_stage_val = (ex_mem_rd_sel[0] || ex_mem_rd_sel[4]) ? ex_mem_alu_re
       .i_xrs1(ex_rs1_val), .o_fp_result(ex_fp_result), .o_int_result(ex_int_result),
       .o_fflags(ex_fflags), .o_busy(fpu_busy), .o_rm_trap(ex_rm_trap)
     );
+
+    // Floating-Point ID/EX Register Pipeline Stage
     always @(posedge i_clk) begin
         if (i_rst) begin
-            id_ex_mext <= 0;
-            id_ex_fpu <= 0;
-            id_ex_frd <= 0;
+            id_ex_mext   <= 0;
+            id_ex_fpu    <= 0;
+            id_ex_frd    <= 0;
             id_ex_fr1_en <= 0;
             id_ex_fr2_en <= 0;
             id_ex_fr3_en <= 0;
-            id_ex_fr1 <= 0;
-            id_ex_fr2 <= 0;
-            id_ex_fr3 <= 0;
-            id_ex_fd <= 0;
-            id_ex_f1 <= 0;
-            id_ex_f2 <= 0;
-            id_ex_f3 <= 0;
+            id_ex_fr1    <= 0;
+            id_ex_fr2    <= 0;
+            id_ex_fr3    <= 0;
+            id_ex_fd     <= 0;
+            id_ex_f1     <= 0;
+            id_ex_f2     <= 0;
+            id_ex_f3     <= 0;
         end else if (!pipe_stall) begin
           if (branch_taken_ex || load_use_stall) begin
-            id_ex_mext <= 0;
-            id_ex_fpu <= 0;
-            id_ex_frd <= 0;
+            id_ex_mext   <= 0;
+            id_ex_fpu    <= 0;
+            id_ex_frd    <= 0;
             id_ex_fr1_en <= 0;
             id_ex_fr2_en <= 0;
             id_ex_fr3_en <= 0;
-            id_ex_fr1 <= 0;
-            id_ex_fr2 <= 0;
-            id_ex_fr3 <= 0;
-            id_ex_fd <= 0;
-            id_ex_f1 <= 0;
-            id_ex_f2 <= 0;
-            id_ex_f3 <= 0;
+            id_ex_fr1    <= 0;
+            id_ex_fr2    <= 0;
+            id_ex_fr3    <= 0;
+            id_ex_fd     <= 0;
+            id_ex_f1     <= 0;
+            id_ex_f2     <= 0;
+            id_ex_f3     <= 0;
           end else begin
-            id_ex_mext <= dec_mext;
-            id_ex_fpu <= dec_fpu;
-            id_ex_frd <= dec_frd;
+            id_ex_mext   <= dec_mext;
+            id_ex_fpu    <= dec_fpu;
+            id_ex_frd    <= dec_frd;
             id_ex_fr1_en <= dec_frs1;
             id_ex_fr2_en <= dec_frs2;
             id_ex_fr3_en <= dec_frs3;
-            id_ex_fr1 <= dec_frs1 ? dec_rs1 : 5'd0;
-            id_ex_fr2 <= dec_frs2 ? dec_rs2 : 5'd0;
-            id_ex_fr3 <= dec_frs3 ? dec_rs3 : 5'd0;
-            id_ex_fd <= if_id_inst[11:7];
-            id_ex_f1 <= rf_f1;
-            id_ex_f2 <= rf_f2;
-            id_ex_f3 <= rf_f3;
+            id_ex_fr1    <= dec_frs1 ? dec_rs1 : 5'd0;
+            id_ex_fr2    <= dec_frs2 ? dec_rs2 : 5'd0;
+            id_ex_fr3    <= dec_frs3 ? dec_rs3 : 5'd0;
+            id_ex_fd     <= if_id_inst[11:7];
+            id_ex_f1     <= rf_f1;
+            id_ex_f2     <= rf_f2;
+            id_ex_f3     <= rf_f3;
           end
         end
     end
+
+    // Forward FP register value during EX if an FP Store (fsw) uses an operand from WB
+    wire [31:0] ex_fr2_val = (mem_wb_valid && mem_wb_frd && (mem_wb_fd == id_ex_fr2)) ? 
+                             wb_fp_data : id_ex_f2;
+
+    // Floating-Point EX/MEM Register Pipeline Stage
     always @(posedge i_clk) begin
         if (i_rst) begin
-            ex_mem_frd <= 0;
-            ex_mem_fd <= 0;
-            ex_mem_fr1 <= 0;
-            ex_mem_fr2 <= 0;
-            ex_mem_fr3 <= 0;
-            ex_mem_f1 <= 0;
-            ex_mem_f2 <= 0;
-            ex_mem_f3 <= 0;
-            ex_mem_fp_result <= 0;
-            ex_mem_fflags <= 0;
+            ex_mem_frd        <= 0;
+            ex_mem_fd         <= 0;
+            ex_mem_fr1        <= 0;
+            ex_mem_fr2        <= 0;
+            ex_mem_fr3        <= 0;
+            ex_mem_f1         <= 0;
+            ex_mem_f2         <= 0;
+            ex_mem_f3         <= 0;
+            ex_mem_fp_result  <= 0;
+            ex_mem_fflags     <= 0;
             ex_mem_store_data <= 0;
         end else if (!pipe_stall) begin
-            ex_mem_frd <= id_ex_frd && id_ex_valid && !ex_stage_trap;
-            ex_mem_fd <= id_ex_fd;
-            ex_mem_fr1 <= id_ex_fr1;
-            ex_mem_fr2 <= id_ex_fr2;
-            ex_mem_fr3 <= id_ex_fr3;
-            ex_mem_f1 <= id_ex_f1;
-            ex_mem_f2 <= id_ex_f2;
-            ex_mem_f3 <= id_ex_f3;
-            ex_mem_fp_result <= ex_fp_result;
-            ex_mem_fflags <= ex_fflags;
-            ex_mem_store_data <= id_ex_fr2_en ? id_ex_f2 : ex_rs2_val;
+            ex_mem_frd        <= id_ex_frd && id_ex_valid && !ex_stage_trap;
+            ex_mem_fd         <= id_ex_fd;
+            ex_mem_fr1        <= id_ex_fr1;
+            ex_mem_fr2        <= id_ex_fr2;
+            ex_mem_fr3        <= id_ex_fr3;
+            ex_mem_f1         <= id_ex_f1;
+            ex_mem_f2         <= id_ex_f2;
+            ex_mem_f3         <= id_ex_f3;
+            ex_mem_fp_result  <= ex_fp_result;
+            ex_mem_fflags     <= ex_fflags;
+            ex_mem_store_data <= id_ex_fr2_en ? ex_fr2_val : ex_rs2_val;
         end
     end
+
+    // Floating-Point MEM/WB Register Pipeline Stage
     always @(posedge i_clk) begin
         if (i_rst) begin
-            mem_wb_frd <= 0;
-            mem_wb_fd <= 0;
-            mem_wb_fr1 <= 0;
-            mem_wb_fr2 <= 0;
-            mem_wb_fr3 <= 0;
-            mem_wb_f1 <= 0;
-            mem_wb_f2 <= 0;
-            mem_wb_f3 <= 0;
+            mem_wb_frd       <= 0;
+            mem_wb_fd        <= 0;
+            mem_wb_fr1       <= 0;
+            mem_wb_fr2       <= 0;
+            mem_wb_fr3       <= 0;
+            mem_wb_f1        <= 0;
+            mem_wb_f2        <= 0;
+            mem_wb_f3        <= 0;
             mem_wb_fp_result <= 0;
-            mem_wb_fflags <= 0;
+            mem_wb_fflags    <= 0;
         end else if (!pipe_stall) begin
-            mem_wb_frd <= ex_mem_frd;
-            mem_wb_fd <= ex_mem_fd;
-            mem_wb_fr1 <= ex_mem_fr1;
-            mem_wb_fr2 <= ex_mem_fr2;
-            mem_wb_fr3 <= ex_mem_fr3;
-            mem_wb_f1 <= ex_mem_f1;
-            mem_wb_f2 <= ex_mem_f2;
-            mem_wb_f3 <= ex_mem_f3;
+            mem_wb_frd       <= ex_mem_frd;
+            mem_wb_fd        <= ex_mem_fd;
+            mem_wb_fr1       <= ex_mem_fr1;
+            mem_wb_fr2       <= ex_mem_fr2;
+            mem_wb_fr3       <= ex_mem_fr3;
+            mem_wb_f1        <= ex_mem_f1;
+            mem_wb_f2        <= ex_mem_f2;
+            mem_wb_f3        <= ex_mem_f3;
             mem_wb_fp_result <= ex_mem_dmem_ren ? mem_load_data : ex_mem_fp_result;
-            mem_wb_fflags <= ex_mem_fflags;
+            mem_wb_fflags    <= ex_mem_fflags;
         end
     end
+
+    // Retirement bus mapping for FP state
     assign o_retire_frs1_raddr = mem_wb_fr1;
     assign o_retire_frs1_rdata = mem_wb_f1;
     assign o_retire_frs2_raddr = mem_wb_fr2;
     assign o_retire_frs2_rdata = mem_wb_f2;
     assign o_retire_frs3_raddr = mem_wb_fr3;
     assign o_retire_frs3_rdata = mem_wb_f3;
-    assign o_retire_frd_wen = mem_wb_frd && mem_wb_valid && !mem_wb_trap;
+    assign o_retire_frd_wen   = mem_wb_frd && mem_wb_valid && !mem_wb_trap;
     assign o_retire_frd_waddr = mem_wb_fd;
     assign o_retire_frd_wdata = wb_fp_data;
-    assign o_retire_fflags = mem_wb_fflags;
+    assign o_retire_fflags    = mem_wb_fflags;
 
 endmodule
 
