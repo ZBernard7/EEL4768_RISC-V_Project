@@ -8,7 +8,7 @@ depth 16
 smtbmc z3
 
 [script]
-read -sv riscv_fv.v cdb_arb.v rat.v
+read -formal -sv riscv_fv.v cdb_arb.v rat.v
 prep -top riscv_fv
 
 [files]
