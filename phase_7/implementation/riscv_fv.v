@@ -73,6 +73,7 @@ module riscv_fv (
     .i_retire_tag(i_retire_tag)
   );
 
+`ifdef FORMAL
   always @(*) begin
     assert (cdb_valid == (|grant));
     assert (cdb_valid == (|i_req));
@@ -150,6 +151,7 @@ module riscv_fv (
       end
     end
   end
+`endif
 endmodule
 
 `default_nettype wire

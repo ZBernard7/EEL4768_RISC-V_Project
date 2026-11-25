@@ -1,0 +1,498 @@
+`timescale 1ns/1ps
+`default_nettype none
+
+module tb_phase7;
+    parameter PROG_FILE    = "/home/net/ab712759/Phase_2/phase_6/traces/random_program.hex";
+    parameter DMEM_FILE    = "/home/net/ab712759/Phase_2/phase_6/traces/random_dmem.hex";
+    parameter CHECK_DMEM   = 1;
+    parameter EVICT_POLICY = 0;
+    parameter NUM_WAYS     = 1;
+    parameter CACHE_SIZE   = 16;
+    parameter BLOCK_SIZE   = 128;
+    parameter PREFETCH_EN  = 0;
+    parameter WRITE_ALLOC  = 0;
+    parameter MEM_DELAY    = 4;
+
+    localparam MAX_CYCLES   = 200000;
+    localparam STUCK_LIMIT  = 5000;
+    localparam MAX_PRINT    = 25;
+    localparam IMEM_BASE    = 32'h00400000;
+    localparam DMEM_BASE    = 32'h10010000;
+    localparam BLOCK_WORDS  = BLOCK_SIZE / 4;
+
+    reg clk = 1'b0;
+    reg rst = 1'b1;
+    always #5 clk = ~clk;
+
+    reg [31:0] imem     [0:65535];
+    reg [31:0] dmem     [0:32767];
+    reg [31:0] expected [0:32767];
+
+    wire [31:0] o_imem_raddr;
+    wire [31:0] imem_idx = (o_imem_raddr - IMEM_BASE) >> 2;
+    wire [31:0] i_imem_rdata = (o_imem_raddr >= IMEM_BASE && imem_idx < 32'd65536) ? imem[imem_idx] : 32'h00000013;
+
+    wire                    o_mem_rd;
+    wire                    o_mem_wr;
+    wire [31:0]             o_mem_rd_addr;
+    wire [31:0]             o_mem_wr_addr;
+    reg                     i_mem_valid = 1'b0;
+    reg  [BLOCK_SIZE*8-1:0] i_mem_rd_data = {BLOCK_SIZE*8{1'b0}};
+    wire [BLOCK_SIZE*8-1:0] o_mem_wr_data;
+    wire [BLOCK_SIZE-1:0]   o_mem_wr_be;
+
+    wire        o_retire_valid;
+    wire [31:0] o_retire_inst;
+    wire        o_retire_trap;
+    wire        o_retire_halt;
+    wire [4:0]  o_retire_rs1_raddr;
+    wire [4:0]  o_retire_rs2_raddr;
+    wire [31:0] o_retire_rs1_rdata;
+    wire [31:0] o_retire_rs2_rdata;
+    wire [4:0]  o_retire_rd_waddr;
+    wire [31:0] o_retire_rd_wdata;
+    wire [31:0] o_retire_dmem_addr;
+    wire [3:0]  o_retire_dmem_mask;
+    wire        o_retire_dmem_ren;
+    wire        o_retire_dmem_wen;
+    wire [31:0] o_retire_dmem_rdata;
+    wire [31:0] o_retire_dmem_wdata;
+    wire [31:0] o_retire_pc;
+    wire [31:0] o_retire_next_pc;
+
+    wire        o_complete_valid;
+    wire [2:0]  o_complete_tag;
+    wire [4:0]  o_complete_rd;
+    wire [31:0] o_complete_value;
+    wire [31:0] o_complete_pc;
+
+    wire [4:0]  o_retire_frs1_raddr;
+    wire [31:0] o_retire_frs1_rdata;
+    wire [4:0]  o_retire_frs2_raddr;
+    wire [31:0] o_retire_frs2_rdata;
+    wire [4:0]  o_retire_frs3_raddr;
+    wire [31:0] o_retire_frs3_rdata;
+    wire        o_retire_frd_wen;
+    wire [4:0]  o_retire_frd_waddr;
+    wire [31:0] o_retire_frd_wdata;
+    wire [4:0]  o_retire_fflags;
+
+    hart #(
+        .RESET_ADDR     (IMEM_BASE),
+        .BYPASS_EN      (1),
+        .EVICT_POLICY   (EVICT_POLICY),
+        .NUM_WAYS       (NUM_WAYS),
+        .CACHE_SIZE     (CACHE_SIZE),
+        .BLOCK_SIZE     (BLOCK_SIZE),
+        .PREFETCH_EN    (PREFETCH_EN),
+        .WRITE_ALLOCATE (WRITE_ALLOC)
+    ) u_hart (
+        .i_clk               (clk),
+        .i_rst               (rst),
+        .o_imem_raddr        (o_imem_raddr),
+        .i_imem_rdata        (i_imem_rdata),
+        .i_mem_ready         (1'b1),
+        .i_mem_valid         (i_mem_valid),
+        .i_mem_rd_data       (i_mem_rd_data),
+        .o_mem_rd            (o_mem_rd),
+        .o_mem_wr            (o_mem_wr),
+        .o_mem_rd_addr       (o_mem_rd_addr),
+        .o_mem_wr_addr       (o_mem_wr_addr),
+        .o_mem_wr_data       (o_mem_wr_data),
+        .o_mem_wr_be         (o_mem_wr_be),
+        .o_retire_valid      (o_retire_valid),
+        .o_retire_inst       (o_retire_inst),
+        .o_retire_trap       (o_retire_trap),
+        .o_retire_halt       (o_retire_halt),
+        .o_retire_rs1_raddr  (o_retire_rs1_raddr),
+        .o_retire_rs2_raddr  (o_retire_rs2_raddr),
+        .o_retire_rs1_rdata  (o_retire_rs1_rdata),
+        .o_retire_rs2_rdata  (o_retire_rs2_rdata),
+        .o_retire_rd_waddr   (o_retire_rd_waddr),
+        .o_retire_rd_wdata   (o_retire_rd_wdata),
+        .o_retire_dmem_addr  (o_retire_dmem_addr),
+        .o_retire_dmem_mask  (o_retire_dmem_mask),
+        .o_retire_dmem_ren   (o_retire_dmem_ren),
+        .o_retire_dmem_wen   (o_retire_dmem_wen),
+        .o_retire_dmem_rdata (o_retire_dmem_rdata),
+        .o_retire_dmem_wdata (o_retire_dmem_wdata),
+        .o_retire_pc         (o_retire_pc),
+        .o_retire_next_pc    (o_retire_next_pc),
+        .o_complete_valid    (o_complete_valid),
+        .o_complete_tag      (o_complete_tag),
+        .o_complete_rd       (o_complete_rd),
+        .o_complete_value    (o_complete_value),
+        .o_complete_pc       (o_complete_pc),
+        .o_retire_frs1_raddr (o_retire_frs1_raddr),
+        .o_retire_frs1_rdata (o_retire_frs1_rdata),
+        .o_retire_frs2_raddr (o_retire_frs2_raddr),
+        .o_retire_frs2_rdata (o_retire_frs2_rdata),
+        .o_retire_frs3_raddr (o_retire_frs3_raddr),
+        .o_retire_frs3_rdata (o_retire_frs3_rdata),
+        .o_retire_frd_wen    (o_retire_frd_wen),
+        .o_retire_frd_waddr  (o_retire_frd_waddr),
+        .o_retire_frd_wdata  (o_retire_frd_wdata),
+        .o_retire_fflags     (o_retire_fflags)
+    );
+
+    wire [31:0] dmem_req_idx = (o_mem_rd_addr - DMEM_BASE) >> 2;
+    wire [31:0] dmem_wr_idx  = (o_mem_wr_addr - DMEM_BASE) >> 2;
+
+    reg [MEM_DELAY-1:0] d_v_pipe;
+    reg [31:0]          d_a_pipe [0:MEM_DELAY-1];
+    integer s, w, b;
+    reg [31:0] da;
+
+    always @(posedge clk) begin
+        if (rst) begin
+            d_v_pipe    <= {MEM_DELAY{1'b0}};
+            i_mem_valid <= 1'b0;
+            for (s = 0; s < MEM_DELAY; s = s + 1)
+                d_a_pipe[s] <= 32'd0;
+        end else begin
+            d_v_pipe    <= {d_v_pipe[MEM_DELAY-2:0], o_mem_rd};
+            d_a_pipe[0] <= dmem_req_idx;
+            for (s = 1; s < MEM_DELAY; s = s + 1)
+                d_a_pipe[s] <= d_a_pipe[s-1];
+
+            i_mem_valid <= d_v_pipe[MEM_DELAY-1];
+            da = d_a_pipe[MEM_DELAY-1];
+            if (d_v_pipe[MEM_DELAY-1]) begin
+                for (w = 0; w < BLOCK_WORDS; w = w + 1) begin
+                    if ((da + w) < 32'd32768)
+                        i_mem_rd_data[w*32 +: 32] <= dmem[da + w];
+                    else
+                        i_mem_rd_data[w*32 +: 32] <= 32'd0;
+                end
+            end
+
+            if (o_mem_wr && dmem_wr_idx < 32'd32768) begin
+                for (w = 0; w < BLOCK_WORDS; w = w + 1) begin
+                    for (b = 0; b < 4; b = b + 1) begin
+                        if (o_mem_wr_be[w*4+b] && (dmem_wr_idx + w) < 32'd32768)
+                            dmem[dmem_wr_idx + w][b*8 +: 8] <= o_mem_wr_data[w*32 + b*8 +: 8];
+                    end
+                end
+            end
+        end
+    end
+
+    reg [7:0]  rob_inflight;
+    reg [31:0] rob_pc [0:7];
+    integer    complete_count;
+    integer    ooo_witness_count;
+    integer    k_tag;
+
+    always @(posedge clk) begin
+        if (rst) begin
+            rob_inflight      <= 8'd0;
+            complete_count    <= 0;
+            ooo_witness_count <= 0;
+            for (k_tag = 0; k_tag < 8; k_tag = k_tag + 1)
+                rob_pc[k_tag] <= 32'd0;
+        end else begin
+            if (o_complete_valid) begin
+                complete_count <= complete_count + 1;
+                for (k_tag = 0; k_tag < 8; k_tag = k_tag + 1) begin
+                    if (rob_inflight[k_tag] && k_tag[2:0] != o_complete_tag)
+                        ooo_witness_count <= ooo_witness_count + 1;
+                end
+                rob_inflight[o_complete_tag] <= 1'b1;
+                rob_pc[o_complete_tag]       <= o_complete_pc;
+            end
+            if (o_retire_valid) begin
+                for (k_tag = 0; k_tag < 8; k_tag = k_tag + 1) begin
+                    if (rob_inflight[k_tag] && rob_pc[k_tag] == o_retire_pc)
+                        rob_inflight[k_tag] <= 1'b0;
+                end
+            end
+        end
+    end
+
+    reg [31:0] sx [0:31];
+    reg [31:0] sf [0:31];
+    reg [2:0]  sfrm;
+    reg [4:0]  prev_fflags;
+    reg [31:0] prev_next_pc;
+    reg        have_prev;
+    reg        prev_halt;
+    integer    total_instructions;
+    integer    chk_errors;
+    integer    total_cycles;
+    integer    trap_count;
+    integer    idle_cycles;
+
+    task reset_sim_state;
+        integer idx;
+        begin
+            rst = 1'b1;
+            for (idx = 0; idx < 65536; idx = idx + 1)
+                imem[idx] = 32'h00000013;
+            for (idx = 0; idx < 32768; idx = idx + 1) begin
+                dmem[idx]     = 32'd0;
+                expected[idx] = 32'd0;
+            end
+            for (idx = 0; idx < 32; idx = idx + 1) begin
+                sx[idx] = 32'd0;
+                sf[idx] = 32'd0;
+            end
+            sfrm               = 3'd0;
+            prev_fflags        = 5'd0;
+            prev_next_pc       = 32'd0;
+            have_prev          = 1'b0;
+            prev_halt          = 1'b0;
+            total_instructions = 0;
+            chk_errors         = 0;
+            total_cycles       = 0;
+            trap_count         = 0;
+            idle_cycles        = 0;
+            repeat (3) @(posedge clk);
+            rst = 1'b0;
+        end
+    endtask
+
+    task report_err;
+        input [255:0] msg;
+        begin
+            chk_errors = chk_errors + 1;
+            if (chk_errors <= MAX_PRINT)
+                $display("[CHECK FAIL] cyc=%0d pc=0x%h inst=0x%h : %0s",
+                         total_cycles, o_retire_pc, o_retire_inst, msg);
+        end
+    endtask
+
+    reg [31:0] inst;
+    reg [31:0] cold;
+    reg [31:0] cnew;
+    reg [31:0] csrsrc;
+    reg [6:0]  op;
+    reg [6:0]  f7;
+    reg [2:0]  f3;
+    reg [2:0]  new_frm;
+    reg [4:0]  new_fflags;
+    reg [4:0]  uimm;
+    reg [11:0] caddr;
+    reg        trp;
+    reg        is_fused;
+    reg        is_flw;
+    reg        is_fsw;
+    reg        is_opfp;
+    reg        fp_dest;
+    reg        fr1_read;
+    reg        fr2_read;
+    reg        fr3_read;
+    reg        is_ctrl;
+    reg        cwr;
+
+    always @(posedge clk) begin
+        if (!rst) begin
+            total_cycles <= total_cycles + 1;
+            idle_cycles  <= o_retire_valid ? 0 : (idle_cycles + 1);
+
+            if (o_retire_valid) begin
+                if (total_instructions < 25)
+                    $display("RET cyc=%0d pc=%h inst=%h rd=%0d wdata=%h next_pc=%h trap=%b",
+                             total_cycles, o_retire_pc, o_retire_inst,
+                             o_retire_rd_waddr, o_retire_rd_wdata, o_retire_next_pc, o_retire_trap);
+
+                inst     = o_retire_inst;
+                op       = inst[6:0];
+                f7       = inst[31:25];
+                f3       = inst[14:12];
+                trp      = o_retire_trap;
+                is_fused = (op == 7'h43) || (op == 7'h47) || (op == 7'h4B) || (op == 7'h4F);
+                is_flw   = (op == 7'h07) && (f3 == 3'b010);
+                is_fsw   = (op == 7'h27) && (f3 == 3'b010);
+                is_opfp  = (op == 7'h53);
+                fp_dest  = is_flw || is_fused ||
+                           (is_opfp && !(f7 == 7'h50 || f7 == 7'h60 || f7 == 7'h70));
+                fr1_read = is_fused || (is_opfp && f7 != 7'h68 && f7 != 7'h78);
+                fr2_read = is_fused || is_fsw ||
+                           (is_opfp && (f7 == 7'h00 || f7 == 7'h04 || f7 == 7'h08 ||
+                                        f7 == 7'h0C || f7 == 7'h10 || f7 == 7'h14 || f7 == 7'h50));
+                fr3_read = is_fused;
+                is_ctrl  = (op == 7'h63) || (op == 7'h6F) || (op == 7'h67);
+
+                if (have_prev && !prev_halt && o_retire_pc != prev_next_pc)
+                    report_err("pc != previous next_pc");
+                if ((trp || !is_ctrl) && o_retire_next_pc != (o_retire_pc + 32'd4))
+                    report_err("next_pc != pc+4");
+                if (o_retire_dmem_ren && o_retire_dmem_wen)
+                    report_err("dmem ren and wen both high");
+
+                if (trp) begin
+                    if (o_retire_rd_waddr != 5'd0)
+                        report_err("trap wrote integer rd");
+                    if (o_retire_frd_wen != 1'b0)
+                        report_err("trap wrote FP rd");
+                    if (o_retire_dmem_ren || o_retire_dmem_wen)
+                        report_err("trap reported memory access");
+                    if (o_retire_fflags != prev_fflags)
+                        report_err("trap changed fflags");
+                end else begin
+                    if (o_retire_rs1_raddr == 5'd0) begin
+                        if (o_retire_rs1_rdata != 32'd0)
+                            report_err("rs1 is x0 but data != 0");
+                    end else if (o_retire_rs1_rdata != sx[o_retire_rs1_raddr])
+                        report_err("rs1 data != architectural value");
+
+                    if (o_retire_rs2_raddr == 5'd0) begin
+                        if (o_retire_rs2_rdata != 32'd0)
+                            report_err("rs2 is x0 but data != 0");
+                    end else if (o_retire_rs2_rdata != sx[o_retire_rs2_raddr])
+                        report_err("rs2 data != architectural value");
+
+                    if (fr1_read && o_retire_frs1_rdata != sf[inst[19:15]])
+                        report_err("frs1 data != architectural value");
+                    if (fr2_read && o_retire_frs2_rdata != sf[inst[24:20]])
+                        report_err("frs2 data != architectural value");
+                    if (fr3_read && o_retire_frs3_rdata != sf[inst[31:27]])
+                        report_err("frs3 data != architectural value");
+
+                    if (o_retire_frd_wen != fp_dest)
+                        report_err("frd_wen wrong for instruction");
+                    if (fp_dest && o_retire_rd_waddr != 5'd0)
+                        report_err("FP-dest instruction wrote integer rd");
+                    if (is_flw && (o_retire_dmem_ren != 1'b1 || o_retire_frd_wdata != o_retire_dmem_rdata))
+                        report_err("flw result != loaded word");
+                    if (is_fsw && (o_retire_dmem_wen != 1'b1 || o_retire_dmem_wdata != o_retire_frs2_rdata))
+                        report_err("fsw data != FP rs2");
+
+                    if (op == 7'h73 && f3 != 3'b000 && f3 != 3'b100) begin
+                        caddr  = inst[31:20];
+                        uimm   = inst[19:15];
+                        csrsrc = f3[2] ? {27'd0, uimm} : o_retire_rs1_rdata;
+                        case (caddr)
+                            12'h001: cold = {27'd0, prev_fflags};
+                            12'h002: cold = {29'd0, sfrm};
+                            12'h003: cold = {24'd0, sfrm, prev_fflags};
+                            default: cold = 32'd0;
+                        endcase
+                        cwr = (f3[1:0] == 2'b01) || (uimm != 5'd0);
+                        case (f3[1:0])
+                            2'b01:   cnew = csrsrc;
+                            2'b10:   cnew = cold | csrsrc;
+                            default: cnew = cold & ~csrsrc;
+                        endcase
+                        new_fflags = prev_fflags;
+                        new_frm    = sfrm;
+                        if (cwr) begin
+                            case (caddr)
+                                12'h001: new_fflags = cnew[4:0];
+                                12'h002: new_frm    = cnew[2:0];
+                                12'h003: begin
+                                    new_frm    = cnew[7:5];
+                                    new_fflags = cnew[4:0];
+                                end
+                                default: ;
+                            endcase
+                        end
+                        sfrm = new_frm;
+                    end
+
+                    if (o_retire_rd_waddr != 5'd0)
+                        sx[o_retire_rd_waddr] = o_retire_rd_wdata;
+                    if (o_retire_frd_wen)
+                        sf[o_retire_frd_waddr] = o_retire_frd_wdata;
+                end
+
+                prev_fflags        <= o_retire_fflags;
+                prev_next_pc       <= o_retire_next_pc;
+                have_prev          <= 1'b1;
+                prev_halt          <= o_retire_halt;
+                total_instructions <= total_instructions + 1;
+                if (o_retire_trap)
+                    trap_count <= trap_count + 1;
+            end
+        end
+    end
+
+    task wait_for_halt;
+        input [127:0] tag;
+        integer done_flag;
+        begin
+            done_flag = 0;
+            while (!done_flag && total_cycles < MAX_CYCLES) begin
+                @(posedge clk);
+                if (!rst && o_retire_valid && o_retire_halt)
+                    done_flag = 1;
+                if (!rst && idle_cycles == STUCK_LIMIT) begin
+                    $display("[%0s STUCK] no retire for %0d cycles at cyc=%0d pc=0x%h",
+                             tag, STUCK_LIMIT, total_cycles, o_retire_pc);
+                    chk_errors = chk_errors + 1;
+                    done_flag = 1;
+                end
+            end
+            if (total_cycles >= MAX_CYCLES) begin
+                $display("[%0s TIMEOUT] reached %0d cycles", tag, MAX_CYCLES);
+                chk_errors = chk_errors + 1;
+            end
+        end
+    endtask
+
+    integer k, mem_err;
+    initial begin
+        reset_sim_state();
+        dmem[0] = 32'h0000002A;
+        imem[0]  = 32'h00a00093;
+        imem[1]  = 32'h01400113;
+        imem[2]  = 32'h002081b3;
+        imem[3]  = 32'h06300093;
+        imem[4]  = 32'h00118233;
+        imem[5]  = 32'h00002283;
+        imem[6]  = 32'h00428333;
+        imem[7]  = 32'h00000463;
+        imem[8]  = 32'h30900393;
+        imem[9]  = 32'h03700413;
+        imem[10] = 32'h00102483;
+        imem[11] = 32'h00100073;
+
+        wait_for_halt("DIRECTED");
+        if (sx[3] !== 32'd30)  report_err("x3 != 30");
+        if (sx[1] !== 32'd99)  report_err("x1 != 99");
+        if (sx[4] !== 32'd129) report_err("x4 != 129");
+        if (sx[7] !== 32'd0)   report_err("skipped branch instr modified x7");
+        if (sx[8] !== 32'd55)  report_err("x8 != 55");
+        if (trap_count < 1)    report_err("expected misaligned trap");
+
+        $display("REG x1=%0d x2=%0d x3=%0d x4=%0d x5=%0d x6=%0d x8=%0d",
+                 sx[1], sx[2], sx[3], sx[4], sx[5], sx[6], sx[8]);
+        $display("[DIRECTED] cycles=%0d retired=%0d completes=%0d ooo_witness=%0d traps=%0d errs=%0d",
+                 total_cycles, total_instructions, complete_count, ooo_witness_count, trap_count, chk_errors);
+
+        reset_sim_state();
+        $readmemh(PROG_FILE, imem);
+        if (CHECK_DMEM) $readmemh(DMEM_FILE, expected);
+        if (imem[0] === 32'h00000013 && imem[1] === 32'h00000013) begin
+            $display("[FATAL] Program hex not loaded: %0s", PROG_FILE);
+            $finish;
+        end
+
+        wait_for_halt("RANDOM_TRACE");
+        mem_err = 0;
+        if (CHECK_DMEM) begin
+            for (k = 0; k < 32768; k = k + 1) begin
+                if (dmem[k] !== expected[k]) begin
+                    if (mem_err < 15)
+                        $display("DMEM MISMATCH addr 0x%h: got %h expected %h",
+                                 DMEM_BASE + (k << 2), dmem[k], expected[k]);
+                    mem_err = mem_err + 1;
+                end
+            end
+        end
+
+        $display("==================================================");
+        $display("  Program               : %0s", PROG_FILE);
+        $display("  Cycles / Retired      : %0d / %0d (CPI = %0f)",
+                 total_cycles, total_instructions,
+                 (total_instructions > 0) ? ((total_cycles * 1.0) / total_instructions) : 0.0);
+        $display("  CDB Completes / OoO   : %0d / %0d", complete_count, ooo_witness_count);
+        $display("  Traps                 : %0d", trap_count);
+        $display("  Retire-check failures : %0d", chk_errors);
+        $display("  Memory mismatches     : %0d", mem_err);
+        $display("  RESULT                : %0s", (chk_errors == 0 && mem_err == 0) ? "PASS" : "FAIL");
+        $display("==================================================");
+        $finish;
+    end
+endmodule
+`default_nettype wire
